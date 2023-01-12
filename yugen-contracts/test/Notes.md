@@ -1,0 +1,37 @@
+- Interconnected contracts
+  - NativeMetaTransaction
+  - UniswapV2Router
+  - EIP712Base (s)
+  - YGNStaker
+
+* Unit testing only
+  - MasterChef (s)
+  - WithdrawFeeFarm
+  - FYGNClaimableBurner
+  - LiquidityMigratorV1
+  - FYGN
+  - EthalendVaultsQuickSwapStrategy
+  - QuickSwapFarmsStrategyDual
+  - TarotSupplyVaultStrategy
+  - CafeSwapStrategy
+  - Farm
+  - PenroseFinanceStrategy
+  - QuickSwapFarmsStrategy
+  - QuickSwapDragonSyrupStrategy
+  - SushiSwapFarmsStrategy
+  - NachoXYZStrategy
+  - UniversalConverterHelper
+  - RewardManager
+  - UniversalConverter
+  - RewardManagerFactory
+  - DystConverter
+  - SingleSidedLiquidityV2
+  - Converter
+  - FirstBuy
+  - FTMWrapper
+  - FarmWrapper
+
+- Isolated contracts
+  - TransferHelper
+  - SafeMathUniswapV2 (s)
+  - UniswapV2Library (s)
