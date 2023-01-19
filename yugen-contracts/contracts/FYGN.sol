@@ -11,15 +11,23 @@ contract FYGN is ERC20Burnable, Ownable {
         _;
     }
 
-    constructor(string memory name_, string memory symbol_) public ERC20(name_, symbol_) {}
+    constructor(
+        string memory name_,
+        string memory symbol_
+    ) public ERC20(name_, symbol_) {}
 
     function whitelistMinter(address _whitelistAddress) public onlyOwner {
+        //@audit-issue - The check is either incorrect or the reason string is not correct. Otherwise the check is fine.
         require(_whitelistAddress != address(0), "Not owner");
 
         whitelistedMinters[_whitelistAddress] = true;
     }
 
-    function mint(address account, uint256 amount) external onlyWhitelistedMinter {
+    function mint(
+        address account,
+        uint256 amount
+    ) external onlyWhitelistedMinter {
+        //@audit-issue (Low) - No limit on number of tokens being minted, what if the whitelisted user goes rogue.
         _mint(account, amount);
     }
 }

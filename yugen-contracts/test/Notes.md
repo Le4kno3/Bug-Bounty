@@ -1,37 +1,115 @@
+<!-- prettier-ignore -->
 - Interconnected contracts
-  - NativeMetaTransaction
-  - UniswapV2Router
-  - EIP712Base (s)
-  - YGNStaker
+  - done: EIP712Base (s)
+  - done: NativeMetaTransaction
+    - This make use of (inherits) EIP712Base contract to provide the service of meta transactions.
+    - MetaTransaction() is only used when we want to perform transaction without send ETH "value". What is somebody sends `value`?
+    - In the UniswapV2Router, this complete contract is manually copied.
+    - this has a `executeMetaTransaction()` that is not checked properly.
+      - no this is wrong analysis, this function has to be public.
+      - it is a standard EIP way of using it.
+      - regarding address checks, it verifies using digital signature.
+  - pending: UniswapV2Router
+    - It looks like a repository of all codes.
+    - i did not find any implementation of it in live yet, so will park this for later testing.
 
-* Unit testing only
-  - MasterChef (s)
+- Unit testing only
+  - done: ChildFarm.sol [MasterChef]
+    - An implementation of SushiSwap MasterChef staking contract.
+    - Rewards are locked and,
+    - All unlocked rewards can only be harvested after specific time.
+    - Pool has some additional properties
+      - `depositFeeBP` Deposit fee in basis points
+      - `harvestInterval` harvest interval in seconds.
+    - What is rewardLockedUp?
+      - d
+    - What is basis point
+      - d
+    - What is DEPOSIT_FEE_BP?
+      - If you deposit LP tokens, 10% of the amount will be deducated as fees.
+      - This deposit fee, will be transferred to the feeAddress.
+    - No bonus in `getMultiplier()`
+  - done: Farm [MasterChef]
+    - What is a stratergy for a pool?
+      - It determines the total supply of lptokens for that pool, we have to ways to get the lpSupply
+        - (if stratergy then) `pool.strategy.totalInputTokensStaked();`
+        - (if no stratergy) `lpSupply = pool.totalInputTokensStaked;`
+    - lpSupply is stored in state variable
+      - `pool.totalInputTokensStaked` is where the LP token supply is stored.
+    - Each pool will have a stratergy.
+    - What is withdrawalFeeBP?
+      - It is fees people have to pay, when you call the `_withdraw()` to withdraw LP tokens.
+      - This fees has to paid to `ygnConverter` address
+    - What is user.rewardLockedUp?
+      - It seems to be some "extra" rewards that are locked up.
+    - What is WhitelistedHandler[] or what does whitelisting means?
+      - Anyone who deposit LP tokens can set the whitelisted user.
+      - Can we give the WhitelistedHandler[owner][owner] = false?
+    - Where is WhitelistedHandler[] used?
+      - `_deposit()`
+      - `deposit()`
+      - `despositFor()`
+      - `withdrawFor()`
+      - `withdraw()`
+      - `addUserToWhiteList()`
+      - `removeUserFromWhitelist`
+    - Locked up rewards?
+      - `totalLockedUpRewards` stores the amount of rewards locked up across all LP pools.
+    - Check when is the farm harvested and does `nextHarvestUntil` updated after harvest.
+      - `_payOrLockupPendingFYGN` is used to harvest the (locked up) rewards.
+    - `_payOrLockupPendingFYGN`
+      - This means that if you cannot harvest (not reached the harvestUntil time), then your rewards will be locked and the total locked rewards will be updated.
+      - Now at a later point when harvestuntil is reached, you can call the same function to harvest all the locked rewards.
+    - What is Reward Manager?
+      - For all rewards harvested, we need to do an extra step to let the rewardManager know of the harvest `IRewardManager(rewardManager).handleRewardsForUser()`
+    - What is YGN Converter?
+      - d
+    - There is a maximum limits on
+      - MAXIMUM_HARVEST_INTERVAL
+      - MAXIMUM_WITHDRAWAL_FEE_BP
+    - functions which can be called to harvest the lockedRewards?
+      - `_withdraw` with amount = 0
+      - `_deposit` with amount = 0
+    - (done) Check all function that affect the LP tokens transfers either deposits or withdraw or transfers, for all such occurances this value `pool.totalInputTokensStaked` needs to be updated.
+      - `_deposit()`
+      - `_withdraw()`
+      - `emergencyWithdraw()`
+      - Yes I have validated that all such occurances did update the  `pool.totalInputTokensStaked` property.
+    - Here the `getMultiplier()` is controlled by the value of BONUS_MULTIPLIER
+      - there is no such period until which this will be applicable, all is controlled by the owner.
+    - depositFor() using owners address
+    - Audit all the the public non `onlyOwner` functions
+  - done: FYGN (reward token) [ERC20]
+  - FarmWrapper (wrapper for Farm contract) [Farm]
+  - RewardManager
+  - RewardManagerFactory
+  - FirstBuy
   - WithdrawFeeFarm
+  - SushiSwapFarmsStrategy
+  - QuickSwapFarmsStrategy
   - FYGNClaimableBurner
   - LiquidityMigratorV1
-  - FYGN
   - EthalendVaultsQuickSwapStrategy
   - QuickSwapFarmsStrategyDual
   - TarotSupplyVaultStrategy
   - CafeSwapStrategy
-  - Farm
   - PenroseFinanceStrategy
-  - QuickSwapFarmsStrategy
   - QuickSwapDragonSyrupStrategy
-  - SushiSwapFarmsStrategy
   - NachoXYZStrategy
   - UniversalConverterHelper
-  - RewardManager
   - UniversalConverter
-  - RewardManagerFactory
   - DystConverter
   - SingleSidedLiquidityV2
   - Converter
-  - FirstBuy
   - FTMWrapper
-  - FarmWrapper
+
 
 - Isolated contracts
   - TransferHelper
   - SafeMathUniswapV2 (s)
   - UniswapV2Library (s)
+
+---
+
+1. Salt is not used in domain separator.
+2. getMultiplier() mutability should be set to `pure`

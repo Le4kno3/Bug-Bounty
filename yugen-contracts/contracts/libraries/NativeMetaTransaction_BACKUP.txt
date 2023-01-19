@@ -4,7 +4,8 @@ pragma solidity >=0.6.6;
 import "./EIP712Base.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 
-contract NativeMetaTransaction is EIP712Base {
+contract NativeMetaTransactionBackup is EIP712Base {
+    /// @notice - this is needed for this contract, as this is not the newer version of solidity
     using SafeMath for uint256;
 
     bytes32 private constant META_TRANSACTION_TYPEHASH =
@@ -15,6 +16,9 @@ contract NativeMetaTransaction is EIP712Base {
         bytes functionSignature
     );
 
+    //@audit - What is the use of nonce? Why do we need nonce?
+    ///@notice - According to me it is just a counter of how many times transaction is executed for a particular `userAddress`
+    ///@notice - Why?
     mapping(address => uint256) nonces;
 
     /*
@@ -28,7 +32,7 @@ contract NativeMetaTransaction is EIP712Base {
         bytes functionSignature;
     }
 
-    /*
+    /**
      * @param userAddress - This is the address of the user for whom we are executing the meta transaction.
      * @param msg.sender - The person who is executing the meta transaction.
      * @param functionSignature - Is the function that the `userAddress` wishes to execute using meta transaction.
@@ -37,10 +41,7 @@ contract NativeMetaTransaction is EIP712Base {
      * @notice - This function will be inherited to contracts where there are function which are required to run as meta transactions.
      * @notice - message that is hashed = "\x19\x01", getDomainSeperator(), messageHash
      *
-     * @audit-ok - This is a public function with almost no checks on identity,
-     * Can any arbitrary user sign a function signature for a function of a contract that inherits this (NativeMetaTransaction) contract?
-     * yes he can sign only his or some random user, it cannot impersontate other users, as it does not know its private key.
-     * As a standard practice of EIP this function is public.
+     * @audit - This is a public function with almost no checks on identity, Can any arbitrary user sign a function signature for a function of a contract that inherits this (NativeMetaTransaction) contract.
      */
     function executeMetaTransaction(
         address userAddress,
@@ -49,14 +50,12 @@ contract NativeMetaTransaction is EIP712Base {
         bytes32 sigS,
         uint8 sigV
     ) public payable returns (bytes memory) {
-        //get details which has to run via meta transaction fashion.
         MetaTransaction memory metaTx = MetaTransaction({
             nonce: nonces[userAddress],
             from: userAddress,
             functionSignature: functionSignature
         });
 
-        //verify if the userAddress (on behalf of which this meta transation will be run) is indeed the user who he say he is.
         require(verify(userAddress, metaTx, sigR, sigS, sigV), "Signer and signature do not match");
 
         // increase nonce for user (to avoid re-use)
@@ -71,6 +70,7 @@ contract NativeMetaTransaction is EIP712Base {
         );
         require(success, "Function call not successful");
 
+        ///@notice - this will only be returned when some other contract calls this function directly.
         return returnData;
     }
 
@@ -90,7 +90,7 @@ contract NativeMetaTransaction is EIP712Base {
         nonce = nonces[user];
     }
 
-    /*
+    /**
      * @param signer - The person who is claming that he signed the message.
      * @param metaTx - the meta transaction object.
      * @param R S V - message signature.

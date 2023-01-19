@@ -27,6 +27,8 @@ contract EIP712Base is Initializable {
     // one of the contractsa that inherits this contract follows proxy pattern
     // so it is not possible to do this in a constructor
     function _initializeEIP712(string memory name) internal initializer {
+        /// @notice - rest of the things are taken from hardcoded state variables, as according to the developer these will not change.
+        /// @notice - The signature is intended to be verified by "this" contract itself.
         _setDomainSeperator(name);
     }
 
@@ -42,6 +44,7 @@ contract EIP712Base is Initializable {
         );
     }
 
+    /// @notice - The returned domain seperator is in hashed form.
     function getDomainSeperator() public view returns (bytes32) {
         return domainSeperator;
     }
@@ -60,6 +63,7 @@ contract EIP712Base is Initializable {
      * https://eips.ethereum.org/EIPS/eip-712
      * "\\x19" makes the encoding deterministic
      * "\\x01" is the version byte to make it compatible to EIP-191
+     * @notice - This is where we generate the raw msg that will be signed.
      */
     function toTypedMessageHash(bytes32 messageHash) internal view returns (bytes32) {
         return keccak256(abi.encodePacked("\x19\x01", getDomainSeperator(), messageHash));

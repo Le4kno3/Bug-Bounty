@@ -5,15 +5,25 @@ chai.use(chaiAsPromised);
 const { BigNumber } = require("@ethersproject/bignumber");
 const { assert } = require("chai");
 
+const addressTokenHolder = "0x820De2eb0EE8007Ee237E02aCe3BF2b9cD0DdF1a";
+
 describe("FYGN Contract", function () {
-  let fygnInstance, minter, deployer, allAccounts;
+  let minter, deployer, allAccounts;
 
   before(async function () {
     allAccounts = await ethers.getSigners();
     minter = allAccounts[2];
     deployer = allAccounts[0];
-    const FYGN = await ethers.getContractFactory("FYGN");
-    fygnInstance = await FYGN.connect(deployer).deploy("Farm YUGEN", "FYGN");
+
+    const YGN = await ethers.getContractFactory("YUGEN");
+    this.ygnInstance = await YGN.deploy(addressTokenHolder);
+    await this.ygnInstance.deployed();
+    console.log("YGN deployed at " + this.ygnInstance.address);
+  });
+
+  it("meta transaction check", async function () {
+    // call _delegate
+    await this.ygnInstance.executeMetaTransaction();
   });
 
   it("should fail when non-minter tries to mint tokens", async function () {

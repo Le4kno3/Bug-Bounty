@@ -49,19 +49,19 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
         uint256 accfYGNPerShare; // Accumulated fYGNs per share, times 1e12. See below.
         uint16 withdrawalFeeBP; // Deposit fee in basis points
         uint256 harvestInterval; // Harvest interval in seconds
-        uint256 totalInputTokensStaked; //Total input tokens staked
+        uint256 totalInputTokensStaked; //Total input tokens staked. Based on the stratergy of the LP pool new deosited amount will be calculated and added here.
         IStrategy strategy; //strategy address
     }
 
     IFYGN public fYGN; // The fYGN TOKEN!
-    uint256 public fYGNPerBlock; // FYGN tokens minted per block.
+    uint256 public fYGNPerBlock; // RewardsPerBlock. FYGN tokens minted per block.
     address public ygnConverter; // YGN Converter address
     uint256 public startBlock; // The block number when fYGN minting starts.
     uint256 public bonusEndBlock; // Block number when bonus FYGN period ends.
 
     uint256 public BONUS_MULTIPLIER = 1; // Bonus muliplier for early fygn makers.
     uint256 public totalAllocPoint = 0; // Total allocation points. Must be the sum of all allocation points in all pools.
-    uint256 public totalLockedUpRewards; // Total locked up rewards
+    uint256 public totalLockedUpRewards; // Total locked up rewards, across all LP pools
 
     uint256 public constant MAXIMUM_HARVEST_INTERVAL = 14 days; // Max harvest interval: 14 days.
     uint16 public constant MAXIMUM_WITHDRAWAL_FEE_BP = 1000; // Max withdrawal fee: 10%.
@@ -92,8 +92,14 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
     );
     event UpdatedPoolAllocPoint(uint256 indexed pid, uint256 allocPoint);
     event UpdatedPoolStrategy(uint256 indexed pid, IStrategy strategy);
-    event UpdatedPoolWithdrawalFeeBP(uint256 indexed pid, uint256 withdrawalFeeBP);
-    event UpdatedPoolHarvestInterval(uint256 indexed pid, uint256 harvestInterval);
+    event UpdatedPoolWithdrawalFeeBP(
+        uint256 indexed pid,
+        uint256 withdrawalFeeBP
+    );
+    event UpdatedPoolHarvestInterval(
+        uint256 indexed pid,
+        uint256 harvestInterval
+    );
     event PoolUpdated(
         uint256 indexed pid,
         uint256 lastRewardBlock,
@@ -102,9 +108,17 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
     );
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
-    event EmergencyWithdraw(address indexed user, uint256 indexed pid, uint256 amount);
+    event EmergencyWithdraw(
+        address indexed user,
+        uint256 indexed pid,
+        uint256 amount
+    );
     event SetYGNConverter(address indexed user, address indexed ygnConverter);
-    event RewardLockedUp(address indexed user, uint256 indexed pid, uint256 amountLockedUp);
+    event RewardLockedUp(
+        address indexed user,
+        uint256 indexed pid,
+        uint256 amountLockedUp
+    );
     event BonusMultiplierUpdated(uint256 _bonusMultiplier);
     event BlockRateUpdated(uint256 _blockRate);
     event UserWhitelisted(address _primaryUser, address _whitelistedUser);
@@ -136,45 +150,54 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
         rewardManager = address(0);
     }
 
+    //-------------------------------------------------------------->
     //Only Owner Functions
+    //-------------------------------------------------------------->
 
-    function updateBonusMultiplier(uint256 multiplierNumber) external onlyOwner {
+    function updateBonusMultiplier(
+        uint256 multiplierNumber
+    ) external onlyOwner {
+        //update all because the accRewardsPerShare will not be the same after this change.
         massUpdatePools();
         BONUS_MULTIPLIER = multiplierNumber;
         emit BonusMultiplierUpdated(BONUS_MULTIPLIER);
     }
 
     function updateBlockRate(uint256 _fYGNPerBlock) external onlyOwner {
+        //update all because the accRewardsPerShare will not be the same after this change.
         massUpdatePools();
         fYGNPerBlock = _fYGNPerBlock;
         emit BlockRateUpdated(_fYGNPerBlock);
     }
 
-    function updateRewardManagerMode(bool _isRewardManagerEnabled) external onlyOwner {
+    // to enable of disable Reward Manager
+    function updateRewardManagerMode(
+        bool _isRewardManagerEnabled
+    ) external onlyOwner {
+        //@audit - not sure the use of RewardManager at this stage.
         massUpdatePools();
         isRewardManagerEnabled = _isRewardManagerEnabled;
     }
 
-    function updateRewardManager(address _rewardManager)
-        external
-        onlyOwner
-        ensureNonZeroAddress(_rewardManager)
-    {
+    // to set who will be the Reward Manager
+    function updateRewardManager(
+        address _rewardManager
+    ) external onlyOwner ensureNonZeroAddress(_rewardManager) {
         massUpdatePools();
         rewardManager = _rewardManager;
     }
 
-    // Update YGN Converter
-    function setYGNConverter(address _ygnConverter)
-        external
-        onlyOwner
-        ensureNonZeroAddress(_ygnConverter)
-    {
+    // Update YGN Converter address
+    function setYGNConverter(
+        address _ygnConverter
+    ) external onlyOwner ensureNonZeroAddress(_ygnConverter) {
         ygnConverter = _ygnConverter;
         emit SetYGNConverter(_msgSender(), _ygnConverter);
     }
 
-    // Add a new lp to the pool. Can only be called by the owner.
+    // Add a new lp pool to the contract. Can only be called by the owner.
+    //@audit - what is any of these values is `0`.
+    //@audit - duplicate LP pools is not checked.
     function add(
         uint256 _allocPoint,
         IERC20 _lpToken,
@@ -187,12 +210,18 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
             _withdrawalFeeBP <= MAXIMUM_WITHDRAWAL_FEE_BP,
             "add: invalid withdrawal fee basis points"
         );
-        require(_harvestInterval <= MAXIMUM_HARVEST_INTERVAL, "add: invalid harvest interval");
+        require(
+            _harvestInterval <= MAXIMUM_HARVEST_INTERVAL,
+            "add: invalid harvest interval"
+        );
 
         if (_withUpdate) {
             massUpdatePools();
         }
-        uint256 lastRewardBlock = block.number > startBlock ? block.number : startBlock;
+        uint256 lastRewardBlock = block.number > startBlock
+            ? block.number
+            : startBlock;
+
         totalAllocPoint = totalAllocPoint.add(_allocPoint);
         poolInfo.push(
             PoolInfo({
@@ -257,7 +286,10 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
         uint256 _harvestInterval,
         bool _withUpdate
     ) external onlyOwner validatePoolByPid(_pid) nonReentrant {
-        require(_harvestInterval <= MAXIMUM_HARVEST_INTERVAL, "add: invalid harvest interval");
+        require(
+            _harvestInterval <= MAXIMUM_HARVEST_INTERVAL,
+            "add: invalid harvest interval"
+        );
         if (_withUpdate) {
             massUpdatePools();
         } else {
@@ -268,7 +300,7 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
         emit UpdatedPoolHarvestInterval(_pid, _harvestInterval);
     }
 
-    //Shouldn't be used and only be used when no LP tokens are staked
+    // @audit - Shouldn't be used and only be used when no LP tokens are staked. This is a trust we have on the owner of the contract.
     function updatePoolStrategy(
         uint256 _pid,
         IStrategy _strategy,
@@ -284,7 +316,7 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
         emit UpdatedPoolStrategy(_pid, _strategy);
     }
 
-    // Update the given pool's fYGN allocation point. Can only be called by the owner.
+    // Update the given pool's fYGN allocation point, withdrawlFeeBP, harvestInternal. Can only be called by the owner.
     function set(
         uint256 _pid,
         uint256 _allocPoint,
@@ -296,21 +328,32 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
             _withdrawalFeeBP <= MAXIMUM_WITHDRAWAL_FEE_BP,
             "set: invalid deposit fee basis points"
         );
-        require(_harvestInterval <= MAXIMUM_HARVEST_INTERVAL, "add: invalid harvest interval");
+        require(
+            _harvestInterval <= MAXIMUM_HARVEST_INTERVAL,
+            "add: invalid harvest interval"
+        );
         if (_withUpdate) {
             massUpdatePools();
         } else {
             updatePool(_pid);
         }
         PoolInfo storage pool = poolInfo[_pid];
+
         totalAllocPoint = totalAllocPoint.sub(pool.allocPoint).add(_allocPoint);
+
         pool.allocPoint = _allocPoint;
         pool.withdrawalFeeBP = _withdrawalFeeBP;
         pool.harvestInterval = _harvestInterval;
 
-        emit UpdatedPoolAlloc(_pid, _allocPoint, _withdrawalFeeBP, _harvestInterval);
+        emit UpdatedPoolAlloc(
+            _pid,
+            _allocPoint,
+            _withdrawalFeeBP,
+            _harvestInterval
+        );
     }
 
+    //@audit - according to me this function should not be external, even if it is onlyOwner
     function withdrawFYGN(uint256 _amount) external onlyOwner nonReentrant {
         IERC20(address(fYGN)).safeTransfer(_msgSender(), _amount);
     }
@@ -323,23 +366,29 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
         _unpause();
     }
 
+    //-------------------------------------------------------------->
     //View Functions
+    //-------------------------------------------------------------->
 
     function poolLength() external view returns (uint256) {
         return poolInfo.length;
     }
 
     // Return reward multiplier over the given _from to _to block.
-    function getMultiplier(uint256 _from, uint256 _to) public view returns (uint256) {
+    // @audit - depending on if BONUS is applicable or not, the entire duration will be under BONUS. This can be exploited.
+    //          say a user has staked a lot of LP tokens, and he found out that LP BONUS is active, so he will get a lot of reward.
+    //          say another public user, knew that BONUS will be there in future data, so he will take a flash loan, stake a lot of LP tokens, and then withdraw.
+    function getMultiplier(
+        uint256 _from,
+        uint256 _to
+    ) public view returns (uint256) {
         return _to.sub(_from).mul(BONUS_MULTIPLIER);
     }
 
-    function getLpTokenAmount(uint256 _pid)
-        public
-        view
-        validatePoolByPid(_pid)
-        returns (uint256 lpSupply)
-    {
+    //get LP tokens supply for that particular LP pool.
+    function getLpTokenAmount(
+        uint256 _pid
+    ) public view validatePoolByPid(_pid) returns (uint256 lpSupply) {
         PoolInfo storage pool = poolInfo[_pid];
         if (address(pool.strategy) != address(0)) {
             lpSupply = pool.strategy.totalInputTokensStaked();
@@ -348,64 +397,83 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
         }
     }
 
-    // View function to see pending fYGNs on frontend.
-    function pendingFYGN(uint256 _pid, address _user)
-        external
-        view
-        validatePoolByPid(_pid)
-        returns (uint256)
-    {
+    // pendingReward. View function to see pending fYGNs on frontend.
+    function pendingFYGN(
+        uint256 _pid,
+        address _user
+    ) external view validatePoolByPid(_pid) returns (uint256) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint256 accfYGNPerShare = pool.accfYGNPerShare;
+        //@audit - Why the stratergy is not taken in picture here for lpSupply calculation?
         uint256 lpSupply = pool.totalInputTokensStaked;
         if (block.number > pool.lastRewardBlock && lpSupply != 0) {
-            uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-            uint256 fygnReward = multiplier.mul(fYGNPerBlock).mul(pool.allocPoint).div(
-                totalAllocPoint
+            uint256 multiplier = getMultiplier(
+                pool.lastRewardBlock,
+                block.number
             );
-            accfYGNPerShare = accfYGNPerShare.add(fygnReward.mul(ACC_FYGN_PRECISION).div(lpSupply));
+
+            //rewards pending for the complete pool
+            uint256 fygnReward = multiplier
+                .mul(fYGNPerBlock)
+                .mul(pool.allocPoint)
+                .div(totalAllocPoint);
+
+            //update the "acc"RewardsPerShare based on this rewards calculated above.
+            accfYGNPerShare = accfYGNPerShare.add(
+                fygnReward.mul(ACC_FYGN_PRECISION).div(lpSupply)
+            );
         }
-        uint256 pending = user.amount.mul(accfYGNPerShare).div(ACC_FYGN_PRECISION).sub(
-            user.rewardDebt
-        );
+        uint256 pending = user
+            .amount
+            .mul(accfYGNPerShare)
+            .div(ACC_FYGN_PRECISION)
+            .sub(user.rewardDebt);
         return pending.add(user.rewardLockedUp);
     }
 
     // View function to see if user can harvest fYGN's.
-    function canHarvest(uint256 _pid, address _user)
-        public
-        view
-        validatePoolByPid(_pid)
-        returns (bool)
-    {
+    function canHarvest(
+        uint256 _pid,
+        address _user
+    ) public view validatePoolByPid(_pid) returns (bool) {
         UserInfo memory user = userInfo[_pid][_user];
         return block.timestamp >= user.nextHarvestUntil;
     }
 
     // View function to see if user harvest until time.
-    function getHarvestUntil(uint256 _pid, address _user)
-        external
-        view
-        validatePoolByPid(_pid)
-        returns (uint256)
-    {
+    function getHarvestUntil(
+        uint256 _pid,
+        address _user
+    ) external view validatePoolByPid(_pid) returns (uint256) {
         UserInfo memory user = userInfo[_pid][_user];
         return user.nextHarvestUntil;
     }
 
-    function isUserWhiteListed(address _owner, address _user) external view returns (bool) {
+    //@audit - This function can be manipulated. But it is only a view function, other functions dont call it.
+    function isUserWhiteListed(
+        address _owner,
+        address _user
+    ) external view returns (bool) {
         return whiteListedHandlers[_owner][_user];
     }
 
+    //-------------------------------------------------------------->
     //Public And External Functions for User and Internal Functions
+    //-------------------------------------------------------------->
 
-    function addUserToWhiteList(address _user) external ensureNonZeroAddress(_user) {
+    //@audit -  Anyone can add other user which are "mapped to current user" [msg.sender][other_users]
+    function addUserToWhiteList(
+        address _user
+    ) external ensureNonZeroAddress(_user) {
         whiteListedHandlers[_msgSender()][_user] = true;
         emit UserWhitelisted(_msgSender(), _user);
     }
 
-    function removeUserFromWhiteList(address _user) external ensureNonZeroAddress(_user) {
+    //@audit-ok - Anyone can remove other user which are "mapped to current user" [msg.sender][other_users]
+    function removeUserFromWhiteList(
+        address _user
+    ) external ensureNonZeroAddress(_user) {
         whiteListedHandlers[_msgSender()][_user] = false;
         emit UserBlacklisted(_msgSender(), _user);
     }
@@ -413,24 +481,41 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
     // Update reward variables of the given pool to be up-to-date.
     function updatePool(uint256 _pid) public validatePoolByPid(_pid) {
         PoolInfo storage pool = poolInfo[_pid];
+
+        //check if update reward is already run on the block
         if (block.number <= pool.lastRewardBlock) {
             return;
         }
+
+        //get the current LP tokens supply
         uint256 lpSupply = pool.totalInputTokensStaked;
+
         if (lpSupply == 0) {
-            pool.lastRewardBlock = block.number;
+            pool.lastRewardBlock = block.number; //updating when was the lastReward was calculated.
             return;
         }
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-        uint256 fygnReward = multiplier.mul(fYGNPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
+        uint256 fygnReward = multiplier
+            .mul(fYGNPerBlock)
+            .mul(pool.allocPoint)
+            .div(totalAllocPoint);
+
         pool.accfYGNPerShare = pool.accfYGNPerShare.add(
             fygnReward.mul(ACC_FYGN_PRECISION).div(lpSupply)
         );
 
         fYGN.mint(address(this), fygnReward);
 
+        //@audit - pool.totalInputTokensStaked is not updated
+
         pool.lastRewardBlock = block.number;
-        emit PoolUpdated(_pid, pool.lastRewardBlock, lpSupply, pool.accfYGNPerShare);
+
+        emit PoolUpdated(
+            _pid,
+            pool.lastRewardBlock,
+            lpSupply,
+            pool.accfYGNPerShare
+        );
     }
 
     // Update reward variables for all pools. Be careful of gas spending!
@@ -456,10 +541,22 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
         uint256 _amount,
         address _user,
         bool _userWantsToStake
-    ) external validatePoolByPid(_pid) nonReentrant ensureNonZeroAddress(_user) whenNotPaused {
+    )
+        external
+        validatePoolByPid(_pid)
+        nonReentrant
+        ensureNonZeroAddress(_user)
+        whenNotPaused
+    {
         _deposit(_pid, _amount, _user, _userWantsToStake);
     }
 
+    /**
+     * @param _pid - pool id
+     * @param _amount - amount of LP tokens to deposit
+     * @param _user - where the LP tokens will be deposited. because this is an internal function
+     * @param _userWantsToStake - this used for reward manager tasks. If no reward manager then it is redundant. Only used for `_payOrLockupPendingFYGN()`,
+     */
     function _deposit(
         uint256 _pid,
         uint256 _amount,
@@ -472,22 +569,40 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
         whiteListedHandlers[_user][_user] = true;
 
         updatePool(_pid);
+
+        //lock (queue to harvest) / harvest pending "rewards", these does not deal with LP tokens.
+        // This means that current pending rewards = 0
         _payOrLockupPendingFYGN(_pid, _user, _user, _userWantsToStake);
 
         if (_amount > 0) {
-            pool.lpToken.safeTransferFrom(address(_msgSender()), address(this), _amount);
+            pool.lpToken.safeTransferFrom(
+                address(_msgSender()),
+                address(this),
+                _amount
+            );
             uint256 depositedAmount;
             if (address(pool.strategy) != address(0)) {
                 pool.lpToken.safeApprove(address(pool.strategy), _amount);
-                depositedAmount = pool.strategy.deposit(address(pool.lpToken), _amount);
+                // deposit LP tokens using a "stratergy" for that particular amount
+                depositedAmount = pool.strategy.deposit(
+                    address(pool.lpToken),
+                    _amount
+                );
             } else {
+                //if no stratergy
                 depositedAmount = _amount;
             }
             user.amount = user.amount.add(depositedAmount);
             user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
-            pool.totalInputTokensStaked = pool.totalInputTokensStaked.add(depositedAmount);
+            pool.totalInputTokensStaked = pool.totalInputTokensStaked.add(
+                depositedAmount
+            );
         }
-        user.rewardDebt = user.amount.mul(pool.accfYGNPerShare).div(ACC_FYGN_PRECISION);
+
+        // becuase have already locked tokens using `_payOrLockupPendingFYGN` pending rewards = 0
+        user.rewardDebt = user.amount.mul(pool.accfYGNPerShare).div(
+            ACC_FYGN_PRECISION
+        );
         emit Deposit(_user, _pid, _amount);
     }
 
@@ -506,7 +621,13 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
         uint256 _amount,
         address _user,
         bool _userWantsToStake
-    ) external validatePoolByPid(_pid) nonReentrant ensureNonZeroAddress(_user) whenNotPaused {
+    )
+        external
+        validatePoolByPid(_pid)
+        nonReentrant
+        ensureNonZeroAddress(_user)
+        whenNotPaused
+    {
         require(whiteListedHandlers[_user][_msgSender()], "not whitelisted");
         _withdraw(_pid, _amount, _user, _msgSender(), _userWantsToStake);
     }
@@ -530,7 +651,10 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
             user.amount = user.amount.sub(_amount);
             uint256 withdrawnAmount;
             if (address(pool.strategy) != address(0)) {
-                withdrawnAmount = pool.strategy.withdraw(address(pool.lpToken), _amount);
+                withdrawnAmount = pool.strategy.withdraw(
+                    address(pool.lpToken),
+                    _amount
+                );
                 pool.lpToken.safeTransferFrom(
                     address(pool.strategy),
                     address(this),
@@ -541,39 +665,62 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
             }
 
             if (pool.withdrawalFeeBP > 0) {
-                uint256 withdrawalFee = withdrawnAmount.mul(pool.withdrawalFeeBP).div(10000);
+                uint256 withdrawalFee = withdrawnAmount
+                    .mul(pool.withdrawalFeeBP)
+                    .div(10000);
                 pool.lpToken.safeTransfer(ygnConverter, withdrawalFee);
-                pool.lpToken.safeTransfer(address(_withdrawer), withdrawnAmount.sub(withdrawalFee));
+                pool.lpToken.safeTransfer(
+                    address(_withdrawer),
+                    withdrawnAmount.sub(withdrawalFee)
+                );
             } else {
-                pool.lpToken.safeTransfer(address(_withdrawer), withdrawnAmount);
+                pool.lpToken.safeTransfer(
+                    address(_withdrawer),
+                    withdrawnAmount
+                );
             }
         }
         pool.totalInputTokensStaked = pool.totalInputTokensStaked.sub(_amount);
-        user.rewardDebt = user.amount.mul(pool.accfYGNPerShare).div(ACC_FYGN_PRECISION);
+
+        //reset the reward debt
+        user.rewardDebt = user.amount.mul(pool.accfYGNPerShare).div(
+            ACC_FYGN_PRECISION
+        );
         emit Withdraw(_user, _pid, _amount);
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw(uint256 _pid) external validatePoolByPid(_pid) nonReentrant {
+    function emergencyWithdraw(
+        uint256 _pid
+    ) external validatePoolByPid(_pid) nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_msgSender()];
         uint256 withdrawnAmount;
         if (address(pool.strategy) != address(0)) {
-            withdrawnAmount = pool.strategy.withdraw(address(pool.lpToken), user.amount);
-            pool.lpToken.safeTransferFrom(address(pool.strategy), address(this), withdrawnAmount);
+            withdrawnAmount = pool.strategy.withdraw(
+                address(pool.lpToken),
+                user.amount
+            );
+            pool.lpToken.safeTransferFrom(
+                address(pool.strategy),
+                address(this),
+                withdrawnAmount
+            );
         } else {
             withdrawnAmount = user.amount;
         }
         pool.lpToken.safeTransfer(address(_msgSender()), withdrawnAmount);
         emit EmergencyWithdraw(_msgSender(), _pid, user.amount);
-        pool.totalInputTokensStaked = pool.totalInputTokensStaked.sub(user.amount);
+        pool.totalInputTokensStaked = pool.totalInputTokensStaked.sub(
+            user.amount
+        );
         user.amount = 0;
         user.rewardDebt = 0;
         user.rewardLockedUp = 0;
         user.nextHarvestUntil = 0;
     }
 
-    // Pay or lockup pending fYGN.
+    // Pay or lockup pending fYGN (rewards).
     function _payOrLockupPendingFYGN(
         uint256 _pid,
         address _user,
@@ -586,20 +733,29 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
             user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
         }
 
-        uint256 pending = user.amount.mul(pool.accfYGNPerShare).div(ACC_FYGN_PRECISION).sub(
-            user.rewardDebt
-        );
+        uint256 pending = user
+            .amount
+            .mul(pool.accfYGNPerShare)
+            .div(ACC_FYGN_PRECISION)
+            .sub(user.rewardDebt);
+
+        //harvest the locked up rewards.
         if (canHarvest(_pid, _user)) {
             if (pending > 0 || user.rewardLockedUp > 0) {
                 uint256 totalRewards = pending.add(user.rewardLockedUp);
 
                 // reset lockup
-                totalLockedUpRewards = totalLockedUpRewards.sub(user.rewardLockedUp);
+                totalLockedUpRewards = totalLockedUpRewards.sub(
+                    user.rewardLockedUp
+                );
                 user.rewardLockedUp = 0;
-                user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
+                user.nextHarvestUntil = block.timestamp.add(
+                    pool.harvestInterval
+                );
 
                 // send rewards
                 if (isRewardManagerEnabled == true) {
+                    // this means we need to log the reward harvest in reward manager.
                     _safeFYGNTransfer(rewardManager, totalRewards);
                     IRewardManager(rewardManager).handleRewardsForUser(
                         _withdrawer,
@@ -607,10 +763,12 @@ contract Farm is Ownable, ReentrancyGuard, Pausable {
                         _userWantsToStake
                     );
                 } else {
+                    //if are not using reward manager, then simply transfer the rewards
                     _safeFYGNTransfer(_withdrawer, totalRewards);
                 }
             }
         } else if (pending > 0) {
+            //if harvestUntil is yet to be reached, then lock the reards.
             user.rewardLockedUp = user.rewardLockedUp.add(pending);
             totalLockedUpRewards = totalLockedUpRewards.add(pending);
             emit RewardLockedUp(_user, _pid, pending);

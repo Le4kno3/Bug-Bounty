@@ -8,7 +8,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 // MasterChef is the master of PolyZap Token (PZAP). He can make PZAP and he is a fair guy.
-//
+// PolyZap token = reward token
 // Note that it's ownable and the owner wields tremendous power. Initially the ownership is
 // transferred to TimeLock contract and Later the ownership will be transferred to a governance smart
 // contract once $PZAP is sufficiently distributed and the community can show to govern itself.
@@ -76,6 +76,8 @@ contract MasterChef is Ownable, ReentrancyGuard {
     // Referral Mapping
     mapping(address => address) public referrers; // account_address -> referrer_address
     mapping(address => uint256) public referredCount; // referrer_address -> num_of_referred
+
+    // LP token address to pool id mapping botht he below data structure uses key as LP token address
     // Pool Exists Mapper
     mapping(IERC20 => bool) public poolExistence;
     // Pool ID Tracker Mapper
@@ -86,14 +88,35 @@ contract MasterChef is Ownable, ReentrancyGuard {
 
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
-    event EmergencyWithdraw(address indexed user, uint256 indexed pid, uint256 amount);
+    event EmergencyWithdraw(
+        address indexed user,
+        uint256 indexed pid,
+        uint256 amount
+    );
     event SetFeeAddress(address indexed user, address indexed _devAddress);
     event SetDevAddress(address indexed user, address indexed _feeAddress);
     event Referral(address indexed _referrer, address indexed _user);
-    event ReferralPaid(address indexed _user, address indexed _userTo, uint256 _reward);
+    event ReferralPaid(
+        address indexed _user,
+        address indexed _userTo,
+        uint256 _reward
+    );
     event ReferralBonusBpChanged(uint256 _oldBp, uint256 _newBp);
-    event UpdateEmissionRate(address indexed user, uint256 indexed _pZapPerBlock);
-    event RewardLockedUp(address indexed user, uint256 indexed pid, uint256 amountLockedUp);
+    event UpdateEmissionRate(
+        address indexed user,
+        uint256 indexed _pZapPerBlock
+    );
+    event RewardLockedUp(
+        address indexed user,
+        uint256 indexed pid,
+        uint256 amountLockedUp
+    );
+
+    // Modifier to check Duplicate pools
+    modifier nonDuplicated(IERC20 _lpToken) {
+        require(poolExistence[_lpToken] == false, "nonDuplicated: duplicated");
+        _;
+    }
 
     constructor(
         IERC20 _pZap,
@@ -113,15 +136,15 @@ contract MasterChef is Ownable, ReentrancyGuard {
         return poolInfo.length;
     }
 
-    function getPoolIdForLpToken(IERC20 _lpToken) external view returns (uint256) {
-        require(poolExistence[_lpToken] != false, "getPoolIdForLpToken: do not exist");
+    //To get pid of existing LP tokens using their LP Token address as mapping key
+    function getPoolIdForLpToken(
+        IERC20 _lpToken
+    ) external view returns (uint256) {
+        require(
+            poolExistence[_lpToken] != false,
+            "getPoolIdForLpToken: do not exist"
+        );
         return poolIdForLpAddress[_lpToken];
-    }
-
-    // Modifier to check Duplicate pools
-    modifier nonDuplicated(IERC20 _lpToken) {
-        require(poolExistence[_lpToken] == false, "nonDuplicated: duplicated");
-        _;
     }
 
     // Add a new lp to the pool. Can only be called by the owner.
@@ -132,12 +155,20 @@ contract MasterChef is Ownable, ReentrancyGuard {
         uint256 _harvestInterval,
         bool _withUpdate
     ) public onlyOwner nonDuplicated(_lpToken) {
-        require(_depositFeeBP <= MAXIMUM_DEPOSIT_FEE_BP, "add: invalid deposit fee basis points");
-        require(_harvestInterval <= MAXIMUM_HARVEST_INTERVAL, "add: invalid harvest interval");
+        require(
+            _depositFeeBP <= MAXIMUM_DEPOSIT_FEE_BP,
+            "add: invalid deposit fee basis points"
+        );
+        require(
+            _harvestInterval <= MAXIMUM_HARVEST_INTERVAL,
+            "add: invalid harvest interval"
+        );
         if (_withUpdate) {
             massUpdatePools();
         }
-        uint256 lastRewardBlock = block.number > startBlock ? block.number : startBlock;
+        uint256 lastRewardBlock = block.number > startBlock
+            ? block.number
+            : startBlock;
         totalAllocPoint = totalAllocPoint.add(_allocPoint);
         poolExistence[_lpToken] = true;
         poolInfo.push(
@@ -161,46 +192,83 @@ contract MasterChef is Ownable, ReentrancyGuard {
         uint256 _harvestInterval,
         bool _withUpdate
     ) public onlyOwner {
-        require(_depositFeeBP <= MAXIMUM_DEPOSIT_FEE_BP, "set: invalid deposit fee basis points");
+        require(
+            _depositFeeBP <= MAXIMUM_DEPOSIT_FEE_BP,
+            "set: invalid deposit fee basis points"
+        );
+
         if (_withUpdate) {
             massUpdatePools();
         }
-        totalAllocPoint = totalAllocPoint.sub(poolInfo[_pid].allocPoint).add(_allocPoint);
+
+        //@audit-ok - What if the pid does not exists?
+        //            it will give error, also new entries will not be created,
+        //            because you need to push to struct "array".
+
+        //updates the state variable totalAllocPoint
+        totalAllocPoint = totalAllocPoint.sub(poolInfo[_pid].allocPoint).add(
+            _allocPoint
+        );
+
+        //update the pool specific data
         poolInfo[_pid].allocPoint = _allocPoint;
         poolInfo[_pid].depositFeeBP = _depositFeeBP;
         poolInfo[_pid].harvestInterval = _harvestInterval;
     }
 
     // Return reward multiplier over the given _from to _to block.
-    function getMultiplier(uint256 _from, uint256 _to) public view returns (uint256) {
+    // No bonus here as compared to SushiSwap MasterChef
+    function getMultiplier(
+        uint256 _from,
+        uint256 _to
+    ) public view returns (uint256) {
         return _to.sub(_from);
     }
 
+    //------------------------------------------------------------
+
     // View function to see pending PZAPs on frontend.
-    function pendingPZap(uint256 _pid, address _user) external view returns (uint256) {
+    function pendingPZap(
+        uint256 _pid,
+        address _user
+    ) external view returns (uint256) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint256 accPZapPerShare = pool.accPZapPerShare;
         uint256 lpSupply = pool.lpToken.balanceOf(address(this));
         if (block.number > pool.lastRewardBlock && lpSupply != 0) {
-            uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-            uint256 pZapReward = multiplier.mul(pZapPerBlock).mul(pool.allocPoint).div(
-                totalAllocPoint
+            uint256 multiplier = getMultiplier(
+                pool.lastRewardBlock,
+                block.number
             );
-            accPZapPerShare = accPZapPerShare.add(pZapReward.mul(1e12).div(lpSupply));
+            uint256 pZapReward = multiplier
+                .mul(pZapPerBlock)
+                .mul(pool.allocPoint)
+                .div(totalAllocPoint);
+            accPZapPerShare = accPZapPerShare.add(
+                pZapReward.mul(1e12).div(lpSupply)
+            );
         }
-        uint256 pending = user.amount.mul(accPZapPerShare).div(1e12).sub(user.rewardDebt);
+        uint256 pending = user.amount.mul(accPZapPerShare).div(1e12).sub(
+            user.rewardDebt
+        );
         return pending.add(user.rewardLockedUp);
     }
 
     // View function to see if user can harvest PZAP's.
-    function canHarvest(uint256 _pid, address _user) public view returns (bool) {
+    function canHarvest(
+        uint256 _pid,
+        address _user
+    ) public view returns (bool) {
         UserInfo storage user = userInfo[_pid][_user];
         return block.timestamp >= user.nextHarvestUntil;
     }
 
     // View function to see if user harvest until time.
-    function getHarvestUntil(uint256 _pid, address _user) public view returns (uint256) {
+    function getHarvestUntil(
+        uint256 _pid,
+        address _user
+    ) public view returns (uint256) {
         UserInfo storage user = userInfo[_pid][_user];
         return user.nextHarvestUntil;
     }
@@ -225,8 +293,13 @@ contract MasterChef is Ownable, ReentrancyGuard {
             return;
         }
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-        uint256 pZapReward = multiplier.mul(pZapPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-        pool.accPZapPerShare = pool.accPZapPerShare.add(pZapReward.mul(1e12).div(lpSupply));
+        uint256 pZapReward = multiplier
+            .mul(pZapPerBlock)
+            .mul(pool.allocPoint)
+            .div(totalAllocPoint);
+        pool.accPZapPerShare = pool.accPZapPerShare.add(
+            pZapReward.mul(1e12).div(lpSupply)
+        );
         pool.lastRewardBlock = block.number;
     }
 
@@ -237,7 +310,11 @@ contract MasterChef is Ownable, ReentrancyGuard {
         updatePool(_pid);
         payOrLockupPendingPZap(_pid);
         if (_amount > 0) {
-            pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
+            pool.lpToken.safeTransferFrom(
+                address(msg.sender),
+                address(this),
+                _amount
+            );
             if (pool.depositFeeBP > 0) {
                 uint256 depositFee = _amount.mul(pool.depositFeeBP).div(10000);
                 user.amount = user.amount.add(_amount).sub(depositFee);
@@ -257,14 +334,21 @@ contract MasterChef is Ownable, ReentrancyGuard {
         uint256 _amount,
         address _referrer
     ) public nonReentrant {
-        require(_referrer == address(_referrer), "deposit: Invalid referrer address");
+        require(
+            _referrer == address(_referrer),
+            "deposit: Invalid referrer address"
+        );
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         updatePool(_pid);
         payOrLockupPendingPZap(_pid);
         if (_amount > 0) {
             setReferral(msg.sender, _referrer);
-            pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
+            pool.lpToken.safeTransferFrom(
+                address(msg.sender),
+                address(this),
+                _amount
+            );
             if (pool.depositFeeBP > 0) {
                 uint256 depositFee = _amount.mul(pool.depositFeeBP).div(10000);
                 user.amount = user.amount.add(_amount).sub(depositFee);
@@ -302,15 +386,21 @@ contract MasterChef is Ownable, ReentrancyGuard {
             user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
         }
 
-        uint256 pending = user.amount.mul(pool.accPZapPerShare).div(1e12).sub(user.rewardDebt);
+        uint256 pending = user.amount.mul(pool.accPZapPerShare).div(1e12).sub(
+            user.rewardDebt
+        );
         if (canHarvest(_pid, msg.sender)) {
             if (pending > 0 || user.rewardLockedUp > 0) {
                 uint256 totalRewards = pending.add(user.rewardLockedUp);
 
                 // reset lockup
-                totalLockedUpRewards = totalLockedUpRewards.sub(user.rewardLockedUp);
+                totalLockedUpRewards = totalLockedUpRewards.sub(
+                    user.rewardLockedUp
+                );
                 user.rewardLockedUp = 0;
-                user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
+                user.nextHarvestUntil = block.timestamp.add(
+                    pool.harvestInterval
+                );
 
                 // send rewards
                 safePZapTransfer(msg.sender, totalRewards);
@@ -407,7 +497,10 @@ contract MasterChef is Ownable, ReentrancyGuard {
             _newRefBonusBp <= MAXIMUM_REFERRAL_BP,
             "updateRefBonusPercent: invalid referral bonus basis points"
         );
-        require(_newRefBonusBp != refBonusBP, "updateRefBonusPercent: same bonus bp set");
+        require(
+            _newRefBonusBp != refBonusBP,
+            "updateRefBonusPercent: same bonus bp set"
+        );
         uint256 previousRefBonusBP = refBonusBP;
         refBonusBP = _newRefBonusBp;
         emit ReferralBonusBpChanged(previousRefBonusBP, _newRefBonusBp);
