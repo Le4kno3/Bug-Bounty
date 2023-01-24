@@ -9,9 +9,10 @@
       - no this is wrong analysis, this function has to be public.
       - it is a standard EIP way of using it.
       - regarding address checks, it verifies using digital signature.
-  - pending: UniswapV2Router
+  - pending: UniswapV2Router (critical)
     - It looks like a repository of all codes.
-    - i did not find any implementation of it in live yet, so will park this for later testing.
+    - FirstBuy.sol make use of uniswap router.
+    - Get the address of the router contract and try to see what could be done.
 
 - Unit testing only
   - done: ChildFarm.sol [MasterChef]
@@ -62,6 +63,7 @@
       - Now at a later point when harvestuntil is reached, you can call the same function to harvest all the locked rewards.
     - What is Reward Manager?
       - For all rewards harvested, we need to do an extra step to let the rewardManager know of the harvest `IRewardManager(rewardManager).handleRewardsForUser()`
+    - The rewards are minted during `updatePool()`
     - What is YGN Converter?
       - d
     - There is a maximum limits on
@@ -80,15 +82,37 @@
     - depositFor() using owners address
     - Audit all the the public non `onlyOwner` functions
   - done: FYGN (reward token) [ERC20]
-  - FarmWrapper (wrapper for Farm contract) [Farm]
-  - RewardManager
-  - RewardManagerFactory
-  - FirstBuy
-  - WithdrawFeeFarm
+  - done: FarmWrapper (wrapper for Farm contract) [Farm]
+    - Check for all transfers made to `FramWrapper`.
+    - If we can manually transfer the tokens.
+    - Calls which transfer tokens to `FramWrapper` contract
+  - done: UniversalOneSidedFarm
+    - `deposit()`
+      - The lpsReceived is used to calculate the actual amount to be deposited in LP pool by the `universalOneSidedFarm` contract.
+  - done: RewardManager
+    - ALL FUNCTION ARE EITHER "onlyOwner" OR "view"
+  - done: RewardManagerFactory
+    - To create new RewardManager
+    - Reviewed all non-onlyOwner and non-view functions, all good.
+  - done: FirstBuy
+    - This contracts creates a new uniswap factory contract, means this will be the few contracts that are like initializers for the service.
+    - It acts as an interface to uniswap router contract.
+    - Exchange and liquidity attacks for price manipulation. But note that all these are only owners called.
+  - done: WithdrawFeeFarm [MasterChef]
+    - When is the reward (cnt token) minted?
+      - d
+  - done: LiquidityMigratorV1
+    - I am not able to find any standard contract, so taking this as the standard contracts for future reviews.
+  - SingleSidedLiquidityV2
+    - check if this is a standard contract.
+  - UniversalConverterHelper
+  - UniversalConverter
+  - DystConverter
+  - Converter
+  - FTMWrapper
+  - FYGNClaimableBurner
   - SushiSwapFarmsStrategy
   - QuickSwapFarmsStrategy
-  - FYGNClaimableBurner
-  - LiquidityMigratorV1
   - EthalendVaultsQuickSwapStrategy
   - QuickSwapFarmsStrategyDual
   - TarotSupplyVaultStrategy
@@ -96,18 +120,11 @@
   - PenroseFinanceStrategy
   - QuickSwapDragonSyrupStrategy
   - NachoXYZStrategy
-  - UniversalConverterHelper
-  - UniversalConverter
-  - DystConverter
-  - SingleSidedLiquidityV2
-  - Converter
-  - FTMWrapper
-
 
 - Isolated contracts
-  - TransferHelper
-  - SafeMathUniswapV2 (s)
-  - UniswapV2Library (s)
+  - done: TransferHelper
+  - done: SafeMathUniswapV2 [SafeMath]
+  - done: UniswapV2Library [UniswapV2Library]
 
 ---
 

@@ -25,9 +25,19 @@ contract FirstBuy is Ownable, ReentrancyGuard {
     uint256 private constant DEADLINE =
         0xf000000000000000000000000000000000000000000000000000000000000000;
 
-    event SetLPTokensReceiver(address indexed owner, address indexed lpTokensReceiver);
-    event SetYGNTokensReceiver(address indexed owner, address indexed ygnTokensReceiver);
-    event YGNDeposited(address indexed owner, IERC20 indexed ygn, uint256 indexed amount);
+    event SetLPTokensReceiver(
+        address indexed owner,
+        address indexed lpTokensReceiver
+    );
+    event SetYGNTokensReceiver(
+        address indexed owner,
+        address indexed ygnTokensReceiver
+    );
+    event YGNDeposited(
+        address indexed owner,
+        IERC20 indexed ygn,
+        uint256 indexed amount
+    );
     event SecondaryTokenDeposited(
         address indexed owner,
         IERC20 indexed secondaryToken,
@@ -72,11 +82,9 @@ contract FirstBuy is Ownable, ReentrancyGuard {
      * @notice Update LP tokens receiver address
      * @param _newLPTokensReceiver New address that should receive the LP tokens
      */
-    function updateLPTokensReceiver(address _newLPTokensReceiver)
-        external
-        onlyOwner
-        ensureNonZeroAddress(_newLPTokensReceiver)
-    {
+    function updateLPTokensReceiver(
+        address _newLPTokensReceiver
+    ) external onlyOwner ensureNonZeroAddress(_newLPTokensReceiver) {
         lpTokensReceiver = _newLPTokensReceiver;
         emit SetLPTokensReceiver(msg.sender, _newLPTokensReceiver);
     }
@@ -85,11 +93,9 @@ contract FirstBuy is Ownable, ReentrancyGuard {
      * @notice Update YGN tokens receiver address
      * @param _newYGNTokensReceiver New address that should receive the YGN tokens
      */
-    function updateYGNTokensReceiver(address _newYGNTokensReceiver)
-        external
-        onlyOwner
-        ensureNonZeroAddress(_newYGNTokensReceiver)
-    {
+    function updateYGNTokensReceiver(
+        address _newYGNTokensReceiver
+    ) external onlyOwner ensureNonZeroAddress(_newYGNTokensReceiver) {
         ygnTokensReceiver = _newYGNTokensReceiver;
         emit SetYGNTokensReceiver(msg.sender, _newYGNTokensReceiver);
     }
@@ -98,7 +104,9 @@ contract FirstBuy is Ownable, ReentrancyGuard {
      * @notice Update YGN address
      * @param _ygn YGN token address
      */
-    function updateYGN(IERC20 _ygn) external onlyOwner ensureNonZeroAddress(address(_ygn)) {
+    function updateYGN(
+        IERC20 _ygn
+    ) external onlyOwner ensureNonZeroAddress(address(_ygn)) {
         ygn = _ygn;
     }
 
@@ -106,30 +114,28 @@ contract FirstBuy is Ownable, ReentrancyGuard {
      * @notice Update secondary address
      * @param _secondaryToken secondary token address (to be used along side YGN)
      */
-    function updateSecondaryToken(IERC20 _secondaryToken)
-        external
-        onlyOwner
-        ensureNonZeroAddress(address(_secondaryToken))
-    {
+    function updateSecondaryToken(
+        IERC20 _secondaryToken
+    ) external onlyOwner ensureNonZeroAddress(address(_secondaryToken)) {
         secondaryToken = _secondaryToken;
     }
 
     /**
-     * @notice Update router address
+     * @notice Update router address, when router is updated, all uniswap pair is also reseted.
      * @param _router router address
      */
-    function updateRouter(IUniswapV2Router _router)
-        external
-        onlyOwner
-        ensureNonZeroAddress(address(_router))
-    {
+
+    function updateRouter(
+        IUniswapV2Router _router
+    ) external onlyOwner ensureNonZeroAddress(address(_router)) {
         router = _router;
+        //@audit - There should be check to find if there is any balance in the UniswapPair, before destryoing it.
         factory = IUniswapV2Factory(router.factory());
         require(address(factory) != address(0), "Invalid factory address");
     }
 
     /**
-     * @notice Deposit YGN in the contract to be used for adding liquidity
+     * @notice Deposit YGN in the contract to be used for adding liquidity by the owner
      * @param _amount Amount of YGN token to be deposited
      */
     function depositYGN(uint256 _amount) external onlyOwner nonReentrant {
@@ -138,10 +144,12 @@ contract FirstBuy is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Deposit seconday token in the contract to be used for adding liquidity
+     * @notice Deposit seconday token in the contract to be used for adding liquidity by the owner
      * @param _amount Amount of secondary token to be deposited
      */
-    function depositSecondaryToken(uint256 _amount) external onlyOwner nonReentrant {
+    function depositSecondaryToken(
+        uint256 _amount
+    ) external onlyOwner nonReentrant {
         secondaryToken.safeTransferFrom(_msgSender(), address(this), _amount);
         emit SecondaryTokenDeposited(_msgSender(), secondaryToken, _amount);
     }
@@ -153,15 +161,22 @@ contract FirstBuy is Ownable, ReentrancyGuard {
      * @return lpReceived Amount of LP received
      * @return ygnPurchased Amount of YGN purchased
      */
-    function firstBuy(uint256 _ygnAmountToBuyLP, uint256 _secondaryTokenAmountToBuyLP)
+    function firstBuy(
+        uint256 _ygnAmountToBuyLP,
+        uint256 _secondaryTokenAmountToBuyLP
+    )
         external
         onlyOwner
         nonReentrant
         returns (uint256 lpReceived, uint256 ygnPurchased)
     {
-        require(ygn.balanceOf(address(this)) >= _ygnAmountToBuyLP, "Insufficient YGN balance");
         require(
-            secondaryToken.balanceOf(address(this)) > _secondaryTokenAmountToBuyLP,
+            ygn.balanceOf(address(this)) >= _ygnAmountToBuyLP,
+            "Insufficient YGN balance"
+        );
+        require(
+            secondaryToken.balanceOf(address(this)) >
+                _secondaryTokenAmountToBuyLP,
             "Insufficient secondary token balance"
         );
 
@@ -169,7 +184,10 @@ contract FirstBuy is Ownable, ReentrancyGuard {
         ygn.safeApprove(address(router), 0);
         ygn.safeApprove(address(router), _ygnAmountToBuyLP);
         secondaryToken.safeApprove(address(router), 0);
-        secondaryToken.safeApprove(address(router), _secondaryTokenAmountToBuyLP);
+        secondaryToken.safeApprove(
+            address(router),
+            _secondaryTokenAmountToBuyLP
+        );
 
         //Add liquidity
         (, , lpReceived) = router.addLiquidity(
@@ -186,9 +204,14 @@ contract FirstBuy is Ownable, ReentrancyGuard {
 
         //Buy YGN with amount left.
 
-        uint256 totalSecondaryTokenAmount = secondaryToken.balanceOf(address(this));
+        uint256 totalSecondaryTokenAmount = secondaryToken.balanceOf(
+            address(this)
+        );
 
-        require(totalSecondaryTokenAmount > 0, "Insufficient secondary token balance");
+        require(
+            totalSecondaryTokenAmount > 0,
+            "Insufficient secondary token balance"
+        );
 
         secondaryToken.safeApprove(address(router), 0);
         secondaryToken.safeApprove(address(router), totalSecondaryTokenAmount);
@@ -229,16 +252,25 @@ contract FirstBuy is Ownable, ReentrancyGuard {
         uint256 ygnAmountLeft = ygn.balanceOf(address(this));
         if (ygnAmountLeft > 0) ygn.safeTransfer(owner(), ygnAmountLeft);
 
-        uint256 secondaryTokenAmountLeft = secondaryToken.balanceOf(address(this));
+        uint256 secondaryTokenAmountLeft = secondaryToken.balanceOf(
+            address(this)
+        );
         if (secondaryTokenAmountLeft > 0)
             secondaryToken.safeTransfer(owner(), secondaryTokenAmountLeft);
     }
 
     //View Functions
 
-    function getLPTokenAddress() external view returns (IUniswapV2Pair lpTokenAddress) {
+    function getLPTokenAddress()
+        external
+        view
+        returns (IUniswapV2Pair lpTokenAddress)
+    {
         lpTokenAddress = IUniswapV2Pair(
-            IUniswapV2Factory(factory).getPair(address(ygn), address(secondaryToken))
+            IUniswapV2Factory(factory).getPair(
+                address(ygn),
+                address(secondaryToken)
+            )
         );
     }
 }

@@ -26,10 +26,7 @@ contract SingleSidedLiquidityV2 is ReentrancyGuard, Ownable {
 
     constructor(IDystRouter01 _router, IERC20 _weth) {
         require(address(_router) != address(0), "No zero address");
-        require(
-            address(IDystFactory(_router.factory())) != address(0),
-            "Invalid Factory address"
-        );
+        require(address(IDystFactory(_router.factory())) != address(0), "Invalid Factory address");
         require(address(_weth) != address(0), "No zero address");
         router = _router;
         factory = IDystFactory(_router.factory());
@@ -44,8 +41,7 @@ contract SingleSidedLiquidityV2 is ReentrancyGuard, Ownable {
     }
 
     /**
-    @notice This function is used to invest in given Dystopia/Velodrome/Solidly LP pair through any compatible ERC20 token. This means it will do swap internally.
-            to one of the token in pair first, then add that liquidity to the pair, to the other pair token as return.
+    @notice This function is used to invest in given Dystopia/Velodrome/Solidly LP pair through any compatible ERC20 token
     @param _userAddress User Address who actually deposited there token , recipient of any dust
     @param _fromToken The ERC20 token used for investment (address(0x0000000000000000000000000000000000000000) if matic)
     @param _fromTokenAmount The amount of fromToken to invest
@@ -57,7 +53,6 @@ contract SingleSidedLiquidityV2 is ReentrancyGuard, Ownable {
     @param _intermediatePairType if the intermediate pair (explained above) is stable or volatile
     @return lpBought Amount of LP bought
      */
-    //@audit - Unused userAddress & slippageAdjustedMinLP, the userAddress is fine, but the slippageAdjustedMinLP is a critical thing that prevents slippage attacks.
     function poolLiquidity(
         address _userAddress,
         address _fromToken,
@@ -73,15 +68,11 @@ contract SingleSidedLiquidityV2 is ReentrancyGuard, Ownable {
             "_toToken not an underlying token of _pairAddress"
         );
 
-        //take either erc20 token or ETH as input money, money transferred to (this) contract.
         uint256 toInvest = _pullTokens(_fromToken, _fromTokenAmount);
-
-        //this is how to contract interprets WETH address, but you can always manually give weth as _fromAddress
         if (_fromToken == address(0)) {
             _fromToken = address(weth);
         }
 
-        //if the _fromToken token is not a token from the pair, then swap first
         if (_fromToken != token0 && _fromToken != token1) {
             toInvest = _swapTokensInternal(
                 _fromToken,
@@ -92,22 +83,13 @@ contract SingleSidedLiquidityV2 is ReentrancyGuard, Ownable {
             );
 
             //Returning Residue in from token amount, if any. If it was eth, then we send eth
-            uint256 fromTokenResidue = IERC20(_fromToken).balanceOf(
-                address(this)
-            );
+            uint256 fromTokenResidue = IERC20(_fromToken).balanceOf(address(this));
             if (fromTokenResidue > 0) {
                 if (_fromToken == address(0)) {
                     IWETH(address(weth)).withdraw(fromTokenResidue);
-                    TransferHelper.safeTransferETH(
-                        msg.sender,
-                        fromTokenResidue
-                    );
+                    TransferHelper.safeTransferETH(msg.sender, fromTokenResidue);
                 } else {
-                    TransferHelper.safeTransfer(
-                        _fromToken,
-                        msg.sender,
-                        fromTokenResidue
-                    );
+                    TransferHelper.safeTransfer(_fromToken, msg.sender, fromTokenResidue);
                 }
             }
             _fromToken = _toToken;
@@ -122,9 +104,7 @@ contract SingleSidedLiquidityV2 is ReentrancyGuard, Ownable {
         address _pairAddress,
         uint256 _amount
     ) internal returns (uint256) {
-        (address _token0, address _token1, bool _stable) = _getPairTokens(
-            _pairAddress
-        );
+        (address _token0, address _token1, bool _stable) = _getPairTokens(_pairAddress);
 
         // divide intermediate into appropriate amount to add liquidity
         (uint256 token0Bought, uint256 token1Bought) = _breakAndSwapTokens(
@@ -154,18 +134,10 @@ contract SingleSidedLiquidityV2 is ReentrancyGuard, Ownable {
         uint256 _token1Bought
     ) internal returns (uint256 liquidity, uint256 amountA, uint256 amountB) {
         TransferHelper.safeApprove(address(_token0), address(router), 0);
-        TransferHelper.safeApprove(
-            address(_token0),
-            address(router),
-            _token0Bought
-        );
+        TransferHelper.safeApprove(address(_token0), address(router), _token0Bought);
 
         TransferHelper.safeApprove(address(_token1), address(router), 0);
-        TransferHelper.safeApprove(
-            address(_token1),
-            address(router),
-            _token1Bought
-        );
+        TransferHelper.safeApprove(address(_token1), address(router), _token1Bought);
 
         (amountA, amountB, liquidity) = router.addLiquidity(
             _token0,
@@ -199,22 +171,10 @@ contract SingleSidedLiquidityV2 is ReentrancyGuard, Ownable {
     ) internal returns (uint256 token0Bought, uint256 token1Bought) {
         uint256 amountToSwap = _amount.div(2);
         if (_fromToken == _token0) {
-            token1Bought = _swapTokensInternal(
-                _fromToken,
-                _token1,
-                _stable,
-                amountToSwap,
-                1
-            );
+            token1Bought = _swapTokensInternal(_fromToken, _token1, _stable, amountToSwap, 1);
             token0Bought = _amount.sub(amountToSwap);
         } else {
-            token0Bought = _swapTokensInternal(
-                _fromToken,
-                _token0,
-                _stable,
-                amountToSwap,
-                1
-            );
+            token0Bought = _swapTokensInternal(_fromToken, _token0, _stable, amountToSwap, 1);
             token1Bought = _amount.sub(amountToSwap);
         }
         //add checks before and after swapping if needed
@@ -229,16 +189,9 @@ contract SingleSidedLiquidityV2 is ReentrancyGuard, Ownable {
         stable = lpPair.stable();
     }
 
-    function _pullTokens(
-        address _token,
-        uint256 _amount
-    ) internal returns (uint256) {
-        //if not token specified, then take the native currency msg.value. Then create a token (WETH) out of it.
+    function _pullTokens(address _token, uint256 _amount) internal returns (uint256) {
         if (_token == address(0)) {
-            require(
-                msg.value > 0 && msg.value == _amount,
-                "Incorrect native token amount sent"
-            );
+            require(msg.value > 0 && msg.value == _amount, "Incorrect native token amount sent");
             IWETH(address(weth)).deposit{value: msg.value}();
             return msg.value;
         }
@@ -246,12 +199,7 @@ contract SingleSidedLiquidityV2 is ReentrancyGuard, Ownable {
         require(_amount > 0, "Invalid token amount");
 
         //transfer token from user to contract
-        TransferHelper.safeTransferFrom(
-            _token,
-            msg.sender,
-            address(this),
-            _amount
-        );
+        TransferHelper.safeTransferFrom(_token, msg.sender, address(this), _amount);
         return _amount;
     }
 
@@ -270,7 +218,6 @@ contract SingleSidedLiquidityV2 is ReentrancyGuard, Ownable {
             "Contract should have sufficient from token amount to swap"
         );
 
-        //@audit - Is this overriding the previous approves?
         TransferHelper.safeApprove(_fromToken, address(router), 0);
         TransferHelper.safeApprove(_fromToken, address(router), _amountToSwap);
 

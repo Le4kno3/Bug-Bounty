@@ -44,10 +44,27 @@ contract FarmWrapper is Ownable, ReentrancyGuard {
         bool _userWantsToStake
     ) external nonReentrant {
         require(_amount > 0, "Input amount should be greater than 0");
-        TransferHelper.safeTransferFrom(address(token), msg.sender, address(this), _amount);
 
-        // Convert to WETH-cxETH lp for strategy
-        TransferHelper.safeApprove(address(token), address(universalOneSidedFarm), _amount);
+        //user needs to approve for this transfer first.
+
+        //the tokens are deposited from user to this contract
+        TransferHelper.safeTransferFrom(
+            address(token),
+            msg.sender,
+            address(this),
+            _amount
+        );
+
+        // Convert from "token" to "WETH-cxETH" lp for strategy
+        TransferHelper.safeApprove(
+            address(token),
+            address(universalOneSidedFarm),
+            _amount
+        );
+
+        // For `FarmWrapper.sol` contract, I want to swap `_amount` number of `token` to the other token of `quickswapLP` pair
+        // What is slippageAdjustedMinLP? Minimum LP that should be returned, if less than this value then transaction should revert.
+        //@audit-ok - Why is fromToken and toToken same? becuase it is a on sided farm
         uint256 lpsReceived = universalOneSidedFarm.poolLiquidity(
             address(this),
             address(token),
@@ -57,19 +74,38 @@ contract FarmWrapper is Ownable, ReentrancyGuard {
             1
         );
         require(lpsReceived > 0, "Error in providing liquidity");
+
+        //validate same tracker in different contracts
         require(
             quickswapLP.balanceOf(address(this)) >= lpsReceived,
             "LPs not received in wrapper contract"
         );
 
-        TransferHelper.safeApprove(address(quickswapLP), address(farm), lpsReceived);
+        TransferHelper.safeApprove(
+            address(quickswapLP),
+            address(farm),
+            lpsReceived
+        );
+
         farm.depositFor(_pid, lpsReceived, msg.sender, _userWantsToStake);
 
+        //transfer the leftover tokens to msg.sender
         uint256 leftOvertoken = token.balanceOf(address(this));
+
+        //@audit-ok - Are these calls not vulnerable? This is a wrapper for `Farm` contract,
+        //         so ideally this contract should not have any leftover tokens
+        //@audit-issue - Can we send extra tokens which `this` contract owns?
+        //         What if we deposted for "FrameWrapper" contract?
         if (leftOvertoken > 0) {
-            TransferHelper.safeTransfer(address(token), msg.sender, leftOvertoken);
+            TransferHelper.safeTransfer(
+                address(token),
+                msg.sender,
+                leftOvertoken
+            );
         }
-        uint256 leftOverSecondaryToken = secondaryToken.balanceOf(address(this));
+        uint256 leftOverSecondaryToken = secondaryToken.balanceOf(
+            address(this)
+        );
         if (leftOverSecondaryToken > 0) {
             TransferHelper.safeTransfer(
                 address(secondaryToken),

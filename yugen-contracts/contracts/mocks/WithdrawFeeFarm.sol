@@ -104,9 +104,17 @@ contract WithdrawFeeFarm is Ownable, ReentrancyGuard {
     );
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
-    event EmergencyWithdraw(address indexed user, uint256 indexed pid, uint256 amount);
+    event EmergencyWithdraw(
+        address indexed user,
+        uint256 indexed pid,
+        uint256 amount
+    );
     event SetFeeAddress(address indexed user, address indexed _devAddress);
-    event RewardLockedUp(address indexed user, uint256 indexed pid, uint256 amountLockedUp);
+    event RewardLockedUp(
+        address indexed user,
+        uint256 indexed pid,
+        uint256 amountLockedUp
+    );
     event BonusMultiplierUpdated(uint256 _bonusMultiplier);
     event BlockRateUpdated(uint256 _blockRate);
     event UserWhitelisted(address _primaryUser, address _whitelistedUser);
@@ -129,12 +137,15 @@ contract WithdrawFeeFarm is Ownable, ReentrancyGuard {
     }
 
     modifier validatePoolByPid(uint256 _pid) {
+        //@audit - This could be improved.
         require(_pid < poolInfo.length, "Pool does not exist");
         _;
     }
 
-    function updateBonusMultiplier(uint256 multiplierNumber) external onlyOwner {
-        massUpdatePools();
+    function updateBonusMultiplier(
+        uint256 multiplierNumber
+    ) external onlyOwner {
+        massUpdatePools(); //this change will affect the rewards, hence based on the current multiplier the rewards should be stored.
         BONUS_MULTIPLIER = multiplierNumber;
         emit BonusMultiplierUpdated(BONUS_MULTIPLIER);
     }
@@ -145,7 +156,9 @@ contract WithdrawFeeFarm is Ownable, ReentrancyGuard {
         emit BlockRateUpdated(cntPerBlock);
     }
 
-    function updateRewardManagerMode(bool _isRewardManagerEnabled) external onlyOwner {
+    function updateRewardManagerMode(
+        bool _isRewardManagerEnabled
+    ) external onlyOwner {
         massUpdatePools();
         isRewardManagerEnabled = _isRewardManagerEnabled;
     }
@@ -172,13 +185,23 @@ contract WithdrawFeeFarm is Ownable, ReentrancyGuard {
             _withdrawalFeeBP <= MAXIMUM_WITHDRAWAL_FEE_BP,
             "add: invalid deposit fee basis points"
         );
-        require(_harvestInterval <= MAXIMUM_HARVEST_INTERVAL, "add: invalid harvest interval");
-        require(activeLpTokens[address(_lpToken)] == false, "Reward Token already added");
+        require(
+            _harvestInterval <= MAXIMUM_HARVEST_INTERVAL,
+            "add: invalid harvest interval"
+        );
+
+        //@audit-ok - Why is the need of this? This is needed to avoid duplicate LP token pools
+        require(
+            activeLpTokens[address(_lpToken)] == false,
+            "Reward Token already added"
+        );
 
         if (_withUpdate) {
             massUpdatePools();
         }
-        uint256 lastRewardBlock = block.number > startBlock ? block.number : startBlock;
+        uint256 lastRewardBlock = block.number > startBlock
+            ? block.number
+            : startBlock;
         totalAllocPoint = totalAllocPoint.add(_allocPoint);
         poolInfo.push(
             PoolInfo({
@@ -214,63 +237,84 @@ contract WithdrawFeeFarm is Ownable, ReentrancyGuard {
             _withdrawalFeeBP <= MAXIMUM_WITHDRAWAL_FEE_BP,
             "set: invalid deposit fee basis points"
         );
-        require(_harvestInterval <= MAXIMUM_HARVEST_INTERVAL, "add: invalid harvest interval");
+        require(
+            _harvestInterval <= MAXIMUM_HARVEST_INTERVAL,
+            "add: invalid harvest interval"
+        );
         if (_withUpdate) {
             massUpdatePools();
         }
-        totalAllocPoint = totalAllocPoint.sub(poolInfo[_pid].allocPoint).add(_allocPoint);
+
+        //@audit - That _pid should be updated atleast
+
+        totalAllocPoint = totalAllocPoint.sub(poolInfo[_pid].allocPoint).add(
+            _allocPoint
+        );
         poolInfo[_pid].allocPoint = _allocPoint;
         poolInfo[_pid].withdrawalFeeBP = _withdrawalFeeBP;
         poolInfo[_pid].harvestInterval = _harvestInterval;
 
-        emit UpdatedPoolAlloc(_pid, _allocPoint, _withdrawalFeeBP, _harvestInterval);
+        emit UpdatedPoolAlloc(
+            _pid,
+            _allocPoint,
+            _withdrawalFeeBP,
+            _harvestInterval
+        );
     }
 
     // Return reward multiplier over the given _from to _to block.
-    function getMultiplier(uint256 _from, uint256 _to) public view returns (uint256) {
+    //@audit-ok - Same issue, people will do big when the BONUS_MULTIPLIER is enabled.
+    //            But as the rewards are updated this will work safely.
+    function getMultiplier(
+        uint256 _from,
+        uint256 _to
+    ) public view returns (uint256) {
         return _to.sub(_from).mul(BONUS_MULTIPLIER);
     }
 
-    // View function to see pending CNTs on frontend.
-    function pendingCNT(uint256 _pid, address _user)
-        external
-        view
-        validatePoolByPid(_pid)
-        returns (uint256)
-    {
+    // pendingRewards(). View function to see pending CNTs on frontend.
+    function pendingCNT(
+        uint256 _pid,
+        address _user
+    ) external view validatePoolByPid(_pid) returns (uint256) {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
         uint256 accCNTPerShare = pool.accCNTPerShare;
+        //@audit - Can a sandwitch attack is possible here? Due to "address(this)"
         uint256 lpSupply = pool.lpToken.balanceOf(address(this));
         if (block.number > pool.lastRewardBlock && lpSupply != 0) {
-            uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-            uint256 cntReward = multiplier.mul(cntPerBlock).mul(pool.allocPoint).div(
-                totalAllocPoint
+            uint256 multiplier = getMultiplier(
+                pool.lastRewardBlock,
+                block.number
             );
-            accCNTPerShare = accCNTPerShare.add(cntReward.mul(1e12).div(lpSupply));
+            uint256 cntReward = multiplier
+                .mul(cntPerBlock)
+                .mul(pool.allocPoint)
+                .div(totalAllocPoint);
+            accCNTPerShare = accCNTPerShare.add(
+                cntReward.mul(1e12).div(lpSupply)
+            );
         }
-        uint256 pending = user.amount.mul(accCNTPerShare).div(1e12).sub(user.rewardDebt);
-        return pending.add(user.rewardLockedUp);
+        uint256 pending = user.amount.mul(accCNTPerShare).div(1e12).sub(
+            user.rewardDebt
+        );
+        return pending.add(user.rewardLockedUp); //rewards locked up because user has called this function before harvest period is matured.
     }
 
     // View function to see if user can harvest cnt's.
-    function canHarvest(uint256 _pid, address _user)
-        public
-        view
-        validatePoolByPid(_pid)
-        returns (bool)
-    {
+    function canHarvest(
+        uint256 _pid,
+        address _user
+    ) public view validatePoolByPid(_pid) returns (bool) {
         UserInfo memory user = userInfo[_pid][_user];
         return block.timestamp >= user.nextHarvestUntil;
     }
 
     // View function to see if user harvest until time.
-    function getHarvestUntil(uint256 _pid, address _user)
-        external
-        view
-        validatePoolByPid(_pid)
-        returns (uint256)
-    {
+    function getHarvestUntil(
+        uint256 _pid,
+        address _user
+    ) external view validatePoolByPid(_pid) returns (uint256) {
         UserInfo memory user = userInfo[_pid][_user];
         return user.nextHarvestUntil;
     }
@@ -295,14 +339,30 @@ contract WithdrawFeeFarm is Ownable, ReentrancyGuard {
             return;
         }
         uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-        uint256 cntReward = multiplier.mul(cntPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-        pool.accCNTPerShare = pool.accCNTPerShare.add(cntReward.mul(1e12).div(lpSupply));
+        uint256 cntReward = multiplier
+            .mul(cntPerBlock)
+            .mul(pool.allocPoint)
+            .div(totalAllocPoint);
+
+        //@audit - The cntReards is only updated to the accCNTPerShare, but it is not minted.
+
+        pool.accCNTPerShare = pool.accCNTPerShare.add(
+            cntReward.mul(1e12).div(lpSupply)
+        );
         pool.lastRewardBlock = block.number;
-        emit PoolUpdated(_pid, pool.lastRewardBlock, lpSupply, pool.accCNTPerShare);
+        emit PoolUpdated(
+            _pid,
+            pool.lastRewardBlock,
+            lpSupply,
+            pool.accCNTPerShare
+        );
     }
 
     // Deposit LP tokens to Farm for CNT allocation.
-    function deposit(uint256 _pid, uint256 _amount) external validatePoolByPid(_pid) nonReentrant {
+    function deposit(
+        uint256 _pid,
+        uint256 _amount
+    ) external validatePoolByPid(_pid) nonReentrant {
         _deposit(_pid, _amount, msg.sender);
     }
 
@@ -315,11 +375,7 @@ contract WithdrawFeeFarm is Ownable, ReentrancyGuard {
         _deposit(_pid, _amount, _user);
     }
 
-    function _deposit(
-        uint256 _pid,
-        uint256 _amount,
-        address _user
-    ) internal {
+    function _deposit(uint256 _pid, uint256 _amount, address _user) internal {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
 
@@ -329,7 +385,11 @@ contract WithdrawFeeFarm is Ownable, ReentrancyGuard {
         payOrLockupPendingcnt(_pid, _user, _user);
 
         if (_amount > 0) {
-            pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
+            pool.lpToken.safeTransferFrom(
+                address(msg.sender),
+                address(this),
+                _amount
+            );
             user.amount = user.amount.add(_amount);
             user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
         }
@@ -338,7 +398,10 @@ contract WithdrawFeeFarm is Ownable, ReentrancyGuard {
     }
 
     // Withdraw LP tokens from Farm.
-    function withdraw(uint256 _pid, uint256 _amount) external validatePoolByPid(_pid) nonReentrant {
+    function withdraw(
+        uint256 _pid,
+        uint256 _amount
+    ) external validatePoolByPid(_pid) nonReentrant {
         _withdraw(_pid, _amount, msg.sender, msg.sender);
     }
 
@@ -369,9 +432,14 @@ contract WithdrawFeeFarm is Ownable, ReentrancyGuard {
         if (_amount > 0) {
             user.amount = user.amount.sub(_amount);
             if (pool.withdrawalFeeBP > 0) {
-                uint256 withdrawalFee = _amount.mul(pool.withdrawalFeeBP).div(10000);
+                uint256 withdrawalFee = _amount.mul(pool.withdrawalFeeBP).div(
+                    10000
+                );
                 pool.lpToken.safeTransfer(feeAddress, withdrawalFee);
-                pool.lpToken.safeTransfer(address(_withdrawer), _amount.sub(withdrawalFee));
+                pool.lpToken.safeTransfer(
+                    address(_withdrawer),
+                    _amount.sub(withdrawalFee)
+                );
             } else {
                 pool.lpToken.safeTransfer(address(_withdrawer), _amount);
             }
@@ -381,7 +449,9 @@ contract WithdrawFeeFarm is Ownable, ReentrancyGuard {
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw(uint256 _pid) external validatePoolByPid(_pid) nonReentrant {
+    function emergencyWithdraw(
+        uint256 _pid
+    ) external validatePoolByPid(_pid) nonReentrant {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         pool.lpToken.safeTransfer(address(msg.sender), user.amount);
@@ -402,7 +472,10 @@ contract WithdrawFeeFarm is Ownable, ReentrancyGuard {
         emit UserBlacklisted(msg.sender, _user);
     }
 
-    function isUserWhiteListed(address _owner, address _user) external view returns (bool) {
+    function isUserWhiteListed(
+        address _owner,
+        address _user
+    ) external view returns (bool) {
         return whiteListedHandlers[_owner][_user];
     }
 
@@ -415,21 +488,29 @@ contract WithdrawFeeFarm is Ownable, ReentrancyGuard {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][_user];
 
+        // it will be = 0 when emergency withdrawn
         if (user.nextHarvestUntil == 0) {
             user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
         }
 
-        uint256 pending = user.amount.mul(pool.accCNTPerShare).div(1e12).sub(user.rewardDebt);
+        uint256 pending = user.amount.mul(pool.accCNTPerShare).div(1e12).sub(
+            user.rewardDebt
+        );
         if (canHarvest(_pid, _user)) {
             if (pending > 0 || user.rewardLockedUp > 0) {
                 uint256 totalRewards = pending.add(user.rewardLockedUp);
 
                 // reset lockup
-                totalLockedUpRewards = totalLockedUpRewards.sub(user.rewardLockedUp);
+                totalLockedUpRewards = totalLockedUpRewards.sub(
+                    user.rewardLockedUp
+                );
                 user.rewardLockedUp = 0;
-                user.nextHarvestUntil = block.timestamp.add(pool.harvestInterval);
+                user.nextHarvestUntil = block.timestamp.add(
+                    pool.harvestInterval
+                );
 
                 // send rewards
+                // it assumes that _userWantsToStake is always true.
                 if (isRewardManagerEnabled == true) {
                     safeCNTTransfer(rewardManager, totalRewards);
                     IRewardManager(rewardManager).handleRewardsForUser(
@@ -455,12 +536,15 @@ contract WithdrawFeeFarm is Ownable, ReentrancyGuard {
         emit SetFeeAddress(msg.sender, _feeAddress);
     }
 
+    //@audit - Potential malicious function from a user of the farm perspective.
     function withdrawCNT(uint256 _amount) external onlyOwner {
         cnt.transfer(msg.sender, _amount);
     }
 
     // Safe cnt transfer function, just in case if rounding error causes pool to not have enough CNTs.
+    //@audit-issue - Intenal functions should start with `_`
     function safeCNTTransfer(address _to, uint256 _amount) internal {
+        //@audit - Where is the cnt being minted?
         uint256 cntBal = cnt.balanceOf(address(this));
         if (_amount > cntBal) {
             cnt.transfer(_to, cntBal);

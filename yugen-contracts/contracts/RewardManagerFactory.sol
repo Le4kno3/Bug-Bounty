@@ -65,8 +65,13 @@ contract RewardManagerFactory is Ownable, ReentrancyGuard {
 
     modifier validateRewardManagerByIndex(uint256 _index) {
         require(_index < managers.length, "Reward Manager does not exist");
-        IRewardManager manager = IRewardManager(managers[_index].managerAddress);
-        require(address(manager) != address(0), "Reward Manager Address cannot be zero address");
+        IRewardManager manager = IRewardManager(
+            managers[_index].managerAddress
+        );
+        require(
+            address(manager) != address(0),
+            "Reward Manager Address cannot be zero address"
+        );
         _;
     }
 
@@ -96,12 +101,24 @@ contract RewardManagerFactory is Ownable, ReentrancyGuard {
         uint256 _bonusPercentage,
         bytes memory _rewardManagerByteCode
     ) public onlyOwner {
-        require(address(_fYGN) != address(0), "FYGN token cant be Zero address");
+        require(
+            address(_fYGN) != address(0),
+            "FYGN token cant be Zero address"
+        );
         require(address(_ygn) != address(0), "YGN token cant be Zero address");
-        require(address(_fYGNClaimableBurner) != address(0), "Burner cant be Zero address");
-        require(address(_ygnStaker) != address(0), "Staker cant be Zero address");
+        require(
+            address(_fYGNClaimableBurner) != address(0),
+            "Burner cant be Zero address"
+        );
+        require(
+            address(_ygnStaker) != address(0),
+            "Staker cant be Zero address"
+        );
 
-        require(_startDistribution >= block.timestamp, "Start time should be greater than current"); // ideally at least 24 hours more to give investors time
+        require(
+            _startDistribution >= block.timestamp,
+            "Start time should be greater than current"
+        ); // ideally at least 24 hours more to give investors time
         require(
             _endDistribution > _startDistribution,
             "EndDistribution should be more than startDistribution"
@@ -125,7 +142,12 @@ contract RewardManagerFactory is Ownable, ReentrancyGuard {
 
         address newRewardManagerAddress;
         assembly {
-            newRewardManagerAddress := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
+            newRewardManagerAddress := create2(
+                0,
+                add(bytecode, 0x20),
+                mload(bytecode),
+                salt
+            )
             if iszero(extcodesize(newRewardManagerAddress)) {
                 revert(0, 0)
             }
@@ -143,7 +165,11 @@ contract RewardManagerFactory is Ownable, ReentrancyGuard {
 
         managerIndex[address(newManager)] = totalRewardManagers; //mapping every manager address to its index in the array
 
-        emit RewardManagerLaunched(address(newManager), _startDistribution, _endDistribution);
+        emit RewardManagerLaunched(
+            address(newManager),
+            _startDistribution,
+            _endDistribution
+        );
         totalRewardManagers++;
     }
 
@@ -152,7 +178,9 @@ contract RewardManagerFactory is Ownable, ReentrancyGuard {
         delete managers[_index];
     }
 
-    function userTotalVestingInfo(address _user)
+    function userTotalVestingInfo(
+        address _user
+    )
         public
         view
         returns (
@@ -197,7 +225,9 @@ contract RewardManagerFactory is Ownable, ReentrancyGuard {
     ) external {
         require(rewardDistributor[msg.sender], "Not a valid RewardDistributor");
         //get the most active reward manager
-        IRewardManager manager = IRewardManager(managers[managers.length - 1].managerAddress);
+        IRewardManager manager = IRewardManager(
+            managers[managers.length - 1].managerAddress
+        );
         require(address(manager) != address(0), "No Reward Manager Added");
         /* No use of if condition here to check if AddressZero since funds are transferred before calling handleRewardsForUser. Require is a must
         So if there is accidentally no strategy linked, it goes into else resulting in loss of user's funds.
@@ -215,7 +245,9 @@ contract RewardManagerFactory is Ownable, ReentrancyGuard {
             address rewardManagerAddress = managers[i].managerAddress;
             if (rewardManagerAddress != address(0)) {
                 IRewardManager manager = IRewardManager(rewardManagerAddress);
-                (, , , uint256 userClaimable, , ) = manager.vestingInfo(msg.sender);
+                (, , , uint256 userClaimable, , ) = manager.vestingInfo(
+                    msg.sender
+                );
                 if (userClaimable > 0) {
                     manager.drawDown(msg.sender, false);
                 }
@@ -232,7 +264,9 @@ contract RewardManagerFactory is Ownable, ReentrancyGuard {
             address rewardManagerAddress = managers[i].managerAddress;
             if (rewardManagerAddress != address(0)) {
                 IRewardManager manager = IRewardManager(rewardManagerAddress);
-                (, , , , , uint256 userStillDue) = manager.vestingInfo(msg.sender);
+                (, , , , , uint256 userStillDue) = manager.vestingInfo(
+                    msg.sender
+                );
                 if (userStillDue > 0) {
                     manager.preMatureDraw(msg.sender, false);
                 }
@@ -249,7 +283,9 @@ contract RewardManagerFactory is Ownable, ReentrancyGuard {
             address rewardManagerAddress = managers[i].managerAddress;
             if (rewardManagerAddress != address(0)) {
                 IRewardManager manager = IRewardManager(rewardManagerAddress);
-                (, , , uint256 userClaimable, , ) = manager.vestingInfo(msg.sender);
+                (, , , uint256 userClaimable, , ) = manager.vestingInfo(
+                    msg.sender
+                );
                 if (userClaimable > 0) {
                     manager.drawDown(msg.sender, true);
                 }
@@ -266,7 +302,9 @@ contract RewardManagerFactory is Ownable, ReentrancyGuard {
             address rewardManagerAddress = managers[i].managerAddress;
             if (rewardManagerAddress != address(0)) {
                 IRewardManager manager = IRewardManager(rewardManagerAddress);
-                (, , , , , uint256 userStillDue) = manager.vestingInfo(msg.sender);
+                (, , , , , uint256 userStillDue) = manager.vestingInfo(
+                    msg.sender
+                );
                 if (userStillDue > 0) {
                     manager.preMatureDraw(msg.sender, true);
                 }
@@ -274,21 +312,23 @@ contract RewardManagerFactory is Ownable, ReentrancyGuard {
         }
     }
 
-    function updatePreMaturePenalty(uint256 _index, uint256 _newpreMaturePenalty)
-        external
-        onlyOwner
-        validateRewardManagerByIndex(_index)
-    {
-        IRewardManager manager = IRewardManager(managers[_index].managerAddress);
+    function updatePreMaturePenalty(
+        uint256 _index,
+        uint256 _newpreMaturePenalty
+    ) external onlyOwner validateRewardManagerByIndex(_index) {
+        IRewardManager manager = IRewardManager(
+            managers[_index].managerAddress
+        );
         manager.updatePreMaturePenalty(_newpreMaturePenalty);
     }
 
-    function updateBonusPercentage(uint256 _index, uint256 _newBonusPercentage)
-        external
-        onlyOwner
-        validateRewardManagerByIndex(_index)
-    {
-        IRewardManager manager = IRewardManager(managers[_index].managerAddress);
+    function updateBonusPercentage(
+        uint256 _index,
+        uint256 _newBonusPercentage
+    ) external onlyOwner validateRewardManagerByIndex(_index) {
+        IRewardManager manager = IRewardManager(
+            managers[_index].managerAddress
+        );
         manager.updateBonusPercentage(_newBonusPercentage);
     }
 
@@ -297,18 +337,21 @@ contract RewardManagerFactory is Ownable, ReentrancyGuard {
         uint256 _updatedStartTime,
         uint256 _updatedEndTime
     ) external onlyOwner validateRewardManagerByIndex(_index) {
-        IRewardManager manager = IRewardManager(managers[_index].managerAddress);
+        IRewardManager manager = IRewardManager(
+            managers[_index].managerAddress
+        );
         manager.updateDistributionTime(_updatedStartTime, _updatedEndTime);
         managers[_index].startDistribution = _updatedStartTime;
         managers[_index].endDistribution = _updatedEndTime;
     }
 
-    function updateUpfrontUnlock(uint256 _index, uint256 _newUpfrontUnlock)
-        external
-        onlyOwner
-        validateRewardManagerByIndex(_index)
-    {
-        IRewardManager manager = IRewardManager(managers[_index].managerAddress);
+    function updateUpfrontUnlock(
+        uint256 _index,
+        uint256 _newUpfrontUnlock
+    ) external onlyOwner validateRewardManagerByIndex(_index) {
+        IRewardManager manager = IRewardManager(
+            managers[_index].managerAddress
+        );
         manager.updateUpfrontUnlock(_newUpfrontUnlock);
     }
 
@@ -317,79 +360,106 @@ contract RewardManagerFactory is Ownable, ReentrancyGuard {
         address _excludeAddress,
         bool status
     ) external onlyOwner validateRewardManagerByIndex(_index) {
-        IRewardManager manager = IRewardManager(managers[_index].managerAddress);
+        IRewardManager manager = IRewardManager(
+            managers[_index].managerAddress
+        );
         manager.updateWhitelistAddress(_excludeAddress, status);
     }
 
-    function updateRewardDistributor(address _distributor, bool status) external onlyOwner {
+    function updateRewardDistributor(
+        address _distributor,
+        bool status
+    ) external onlyOwner {
         rewardDistributor[_distributor] = status;
     }
 
-    function addBonusRewards(uint256 _index, uint256 _bonusRewards)
-        external
-        onlyOwner
-        validateRewardManagerByIndex(_index)
-    {
-        IRewardManager manager = IRewardManager(managers[_index].managerAddress);
+    function addBonusRewards(
+        uint256 _index,
+        uint256 _bonusRewards
+    ) external onlyOwner validateRewardManagerByIndex(_index) {
+        IRewardManager manager = IRewardManager(
+            managers[_index].managerAddress
+        );
         fYGN.safeTransferFrom(msg.sender, address(manager), _bonusRewards);
         manager.addBonusRewards(_bonusRewards);
     }
 
-    function removeBonusRewards(uint256 _index, address _owner)
-        external
-        onlyOwner
-        validateRewardManagerByIndex(_index)
-    {
+    function removeBonusRewards(
+        uint256 _index,
+        address _owner
+    ) external onlyOwner validateRewardManagerByIndex(_index) {
         require(
             address(_owner) != address(0),
             "Address of owner receiving rewards should not be zero"
         );
-        IRewardManager manager = IRewardManager(managers[_index].managerAddress);
+        IRewardManager manager = IRewardManager(
+            managers[_index].managerAddress
+        );
         manager.removeBonusRewards(_owner);
     }
 
     // Can be used by the owner to update the address for the FYGNClaimableBurner
-    function updateFYGNClaimableBurner(uint256 _index, IFYGNClaimableBurner _fYGNClaimableBurner)
+    function updateFYGNClaimableBurner(
+        uint256 _index,
+        IFYGNClaimableBurner _fYGNClaimableBurner
+    )
         external
         ensureNonZeroAddress(address(_fYGNClaimableBurner))
         validateRewardManagerByIndex(_index)
         onlyOwner
     {
-        IRewardManager manager = IRewardManager(managers[_index].managerAddress);
+        IRewardManager manager = IRewardManager(
+            managers[_index].managerAddress
+        );
         manager.updateFYGNClaimableBurner(_fYGNClaimableBurner);
     }
 
     // Can be used by the owner to update the address for the YGNStaker
-    function updateYGNStaker(uint256 _index, IYGNStaker _ygnStaker)
+    function updateYGNStaker(
+        uint256 _index,
+        IYGNStaker _ygnStaker
+    )
         external
         ensureNonZeroAddress(address(_ygnStaker))
         validateRewardManagerByIndex(_index)
         onlyOwner
     {
-        IRewardManager manager = IRewardManager(managers[_index].managerAddress);
+        IRewardManager manager = IRewardManager(
+            managers[_index].managerAddress
+        );
         manager.updateYGNStaker(_ygnStaker);
     }
 
     // Can be used by the owner to update the address for the FYGN token
-    function updateFYGN(uint256 _index, IERC20 _fYGN)
+    function updateFYGN(
+        uint256 _index,
+        IERC20 _fYGN
+    )
         external
         ensureNonZeroAddress(address(_fYGN))
         validateRewardManagerByIndex(_index)
         onlyOwner
     {
-        IRewardManager manager = IRewardManager(managers[_index].managerAddress);
+        IRewardManager manager = IRewardManager(
+            managers[_index].managerAddress
+        );
         manager.updateFYGN(ERC20Burnable(address(_fYGN)));
         fYGN = _fYGN;
     }
 
     // Can be used by the owner to update the address for the YGN token
-    function updateYGN(uint256 _index, IERC20 _ygn)
+    function updateYGN(
+        uint256 _index,
+        IERC20 _ygn
+    )
         external
         ensureNonZeroAddress(address(_ygn))
         validateRewardManagerByIndex(_index)
         onlyOwner
     {
-        IRewardManager manager = IRewardManager(managers[_index].managerAddress);
+        IRewardManager manager = IRewardManager(
+            managers[_index].managerAddress
+        );
         manager.updateYGN(_ygn);
     }
 }

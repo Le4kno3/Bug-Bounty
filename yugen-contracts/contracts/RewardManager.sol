@@ -60,7 +60,11 @@ contract RewardManager is Ownable, ReentrancyGuard {
     event Vested(address indexed _beneficiary, uint256 indexed value);
 
     /// @notice event emitted when a successful drawn down of vesting tokens is made
-    event DrawDown(address indexed _beneficiary, uint256 indexed _amount, uint256 indexed bonus);
+    event DrawDown(
+        address indexed _beneficiary,
+        uint256 indexed _amount,
+        uint256 indexed bonus
+    );
 
     /// @notice event emitted when a successful pre mature drawn down of vesting tokens is made
     event PreMatureDrawn(
@@ -75,7 +79,10 @@ contract RewardManager is Ownable, ReentrancyGuard {
     }
 
     modifier checkTime(uint256 _startDistribution, uint256 _endDistribution) {
-        require(_endDistribution > _startDistribution, "end time should be greater than start");
+        require(
+            _endDistribution > _startDistribution,
+            "end time should be greater than start"
+        );
         _;
     }
 
@@ -125,72 +132,67 @@ contract RewardManager is Ownable, ReentrancyGuard {
     }
 
     // Can be used by the owner to update the address for the FYGNClaimableBurner
-    function updateFYGNClaimableBurner(IFYGNClaimableBurner _fYGNClaimableBurner)
-        external
-        ensureNonZeroAddress(address(_fYGNClaimableBurner))
-        onlyOwner
-    {
+    function updateFYGNClaimableBurner(
+        IFYGNClaimableBurner _fYGNClaimableBurner
+    ) external ensureNonZeroAddress(address(_fYGNClaimableBurner)) onlyOwner {
         fYGNClaimableBurner = _fYGNClaimableBurner;
     }
 
     // Can be used by the owner to update the address for the YGNStaker
-    function updateYGNStaker(IYGNStaker _ygnStaker)
-        external
-        ensureNonZeroAddress(address(_ygnStaker))
-        onlyOwner
-    {
+    function updateYGNStaker(
+        IYGNStaker _ygnStaker
+    ) external ensureNonZeroAddress(address(_ygnStaker)) onlyOwner {
         ygnStaker = _ygnStaker;
     }
 
     // Can be used by the owner to update the address for the FYGN token
-    function updateFYGN(ERC20Burnable _fYGN)
-        external
-        ensureNonZeroAddress(address(_fYGN))
-        onlyOwner
-    {
+    function updateFYGN(
+        ERC20Burnable _fYGN
+    ) external ensureNonZeroAddress(address(_fYGN)) onlyOwner {
         fYGN = _fYGN;
     }
 
     // Can be used by the owner to update the address for the YGN token
-    function updateYGN(IERC20 _ygn) external ensureNonZeroAddress(address(_ygn)) onlyOwner {
+    function updateYGN(
+        IERC20 _ygn
+    ) external ensureNonZeroAddress(address(_ygn)) onlyOwner {
         ygn = _ygn;
     }
 
-    function updatePreMaturePenalty(uint256 _newpreMaturePenalty)
-        external
-        checkPercentages(_newpreMaturePenalty)
-        onlyOwner
-    {
+    function updatePreMaturePenalty(
+        uint256 _newpreMaturePenalty
+    ) external checkPercentages(_newpreMaturePenalty) onlyOwner {
         preMaturePenalty = _newpreMaturePenalty;
     }
 
-    function updateBonusPercentage(uint256 _newBonusPercentage)
-        external
-        checkPercentages(_newBonusPercentage)
-        onlyOwner
-    {
+    function updateBonusPercentage(
+        uint256 _newBonusPercentage
+    ) external checkPercentages(_newBonusPercentage) onlyOwner {
         bonusPercentage = _newBonusPercentage;
     }
 
-    function updateDistributionTime(uint256 _updatedStartTime, uint256 _updatedEndTime)
-        external
-        checkTime(_updatedStartTime, _updatedEndTime)
-        onlyOwner
-    {
-        require(startDistribution > _getNow(), "Vesting already started can't update now");
+    function updateDistributionTime(
+        uint256 _updatedStartTime,
+        uint256 _updatedEndTime
+    ) external checkTime(_updatedStartTime, _updatedEndTime) onlyOwner {
+        require(
+            startDistribution > _getNow(),
+            "Vesting already started can't update now"
+        );
         startDistribution = _updatedStartTime;
         endDistribution = _updatedEndTime;
     }
 
-    function updateUpfrontUnlock(uint256 _newUpfrontUnlock)
-        external
-        checkPercentages(_newUpfrontUnlock)
-        onlyOwner
-    {
+    function updateUpfrontUnlock(
+        uint256 _newUpfrontUnlock
+    ) external checkPercentages(_newUpfrontUnlock) onlyOwner {
         upfrontUnlock = _newUpfrontUnlock;
     }
 
-    function updateWhitelistAddress(address _excludeAddress, bool status) external onlyOwner {
+    function updateWhitelistAddress(
+        address _excludeAddress,
+        bool status
+    ) external onlyOwner {
         excludedAddresses[_excludeAddress] = status;
     }
 
@@ -203,7 +205,9 @@ contract RewardManager is Ownable, ReentrancyGuard {
             if (excludedAddresses[_user]) {
                 IERC20(address(fYGN)).safeTransfer(_user, _rewardAmount);
             } else {
-                uint256 upfrontAmount = _rewardAmount.mul(upfrontUnlock).div(1000);
+                uint256 upfrontAmount = _rewardAmount.mul(upfrontUnlock).div(
+                    1000
+                );
                 if (_userWantsToStake) {
                     _burnAndStake(_user, upfrontAmount);
                 } else {
@@ -216,7 +220,10 @@ contract RewardManager is Ownable, ReentrancyGuard {
     }
 
     function _vest(address _user, uint256 _amount) internal {
-        require(_getNow() < startDistribution, "Cannot vest in distribution phase");
+        require(
+            _getNow() < startDistribution,
+            "Cannot vest in distribution phase"
+        );
         require(_user != address(0), "Cannot vest for Zero address");
 
         vestedAmount[_user] = vestedAmount[_user].add(_amount);
@@ -234,7 +241,9 @@ contract RewardManager is Ownable, ReentrancyGuard {
      * @return bonusRewards tokens a user will get if nothing has been withdrawn untill endDistribution
      * @return stillDue tokens still due (and currently locked) from vesting schedule
      */
-    function vestingInfo(address _user)
+    function vestingInfo(
+        address _user
+    )
         public
         view
         returns (
@@ -256,9 +265,14 @@ contract RewardManager is Ownable, ReentrancyGuard {
         );
     }
 
-    function _availableDrawDownAmount(address _user) internal view returns (uint256) {
+    function _availableDrawDownAmount(
+        address _user
+    ) internal view returns (uint256) {
         uint256 currentTime = _getNow();
-        if (currentTime < startDistribution || totalDrawn[_user] == vestedAmount[_user]) {
+        if (
+            currentTime < startDistribution ||
+            totalDrawn[_user] == vestedAmount[_user]
+        ) {
             return 0;
         } else if (currentTime >= endDistribution) {
             return _remainingBalance(_user);
@@ -269,9 +283,13 @@ contract RewardManager is Ownable, ReentrancyGuard {
                 : lastDrawnAt[_user];
 
             // Find out how much time has past since last invocation
-            uint256 timePassedSinceLastInvocation = currentTime.sub(timeLastDrawnOrStart);
+            uint256 timePassedSinceLastInvocation = currentTime.sub(
+                timeLastDrawnOrStart
+            );
 
-            uint256 _remainingVestingTime = endDistribution.sub(timeLastDrawnOrStart);
+            uint256 _remainingVestingTime = endDistribution.sub(
+                timeLastDrawnOrStart
+            );
 
             return
                 _remainingBalance(_user).mul(timePassedSinceLastInvocation).div(
@@ -288,7 +306,10 @@ contract RewardManager is Ownable, ReentrancyGuard {
      * @notice Draws down any vested tokens due
      * @dev Must be called directly by the beneficiary assigned the tokens in the vesting
      */
-    function drawDown(address _user, bool _userWantsToStake) external onlyOwner nonReentrant {
+    function drawDown(
+        address _user,
+        bool _userWantsToStake
+    ) external onlyOwner nonReentrant {
         require(_getNow() > startDistribution, "Vesting not yet started");
         return _drawDown(_user, _userWantsToStake);
     }
@@ -297,27 +318,33 @@ contract RewardManager is Ownable, ReentrancyGuard {
      * @notice Pre maturely Draws down all vested tokens by burning the preMaturePenalty
      * @dev Must be called directly by the beneficiary assigned the tokens in the vesting
      */
-    function preMatureDraw(address _beneficiary, bool _userWantsToStake)
-        external
-        onlyOwner
-        nonReentrant
-    {
+    function preMatureDraw(
+        address _beneficiary,
+        bool _userWantsToStake
+    ) external onlyOwner nonReentrant {
         uint256 remainingBalance = _remainingBalance(_beneficiary);
         require(remainingBalance > 0, "Nothing left to draw");
 
         _drawDown(_beneficiary, _userWantsToStake);
         remainingBalance = _remainingBalance(_beneficiary);
         if (remainingBalance > 0) {
-            uint256 burnAmount = remainingBalance.mul(preMaturePenalty).div(1000);
+            uint256 burnAmount = remainingBalance.mul(preMaturePenalty).div(
+                1000
+            );
             uint256 effectiveAmount = remainingBalance.sub(burnAmount);
 
             totalDrawn[_beneficiary] = vestedAmount[_beneficiary];
-            burntAmount[_beneficiary] = burntAmount[_beneficiary].add(burnAmount);
+            burntAmount[_beneficiary] = burntAmount[_beneficiary].add(
+                burnAmount
+            );
             fYGN.burn(burnAmount);
             if (_userWantsToStake) {
                 _burnAndStake(_beneficiary, effectiveAmount);
             } else {
-                IERC20(address(fYGN)).safeTransfer(_beneficiary, effectiveAmount);
+                IERC20(address(fYGN)).safeTransfer(
+                    _beneficiary,
+                    effectiveAmount
+                );
             }
             emit PreMatureDrawn(_beneficiary, burnAmount, effectiveAmount);
         }
@@ -351,16 +378,19 @@ contract RewardManager is Ownable, ReentrancyGuard {
             _burnAndStake(_beneficiary, amount.add(bonusReward[_beneficiary]));
         } else {
             // Issue tokens to beneficiary
-            IERC20(address(fYGN)).safeTransfer(_beneficiary, amount.add(bonusReward[_beneficiary]));
+            IERC20(address(fYGN)).safeTransfer(
+                _beneficiary,
+                amount.add(bonusReward[_beneficiary])
+            );
         }
 
         emit DrawDown(_beneficiary, amount, bonusReward[_beneficiary]);
     }
 
-    function _burnAndStake(address _beneficiary, uint256 _fYGNShare)
-        internal
-        returns (uint256 xYGNAmount)
-    {
+    function _burnAndStake(
+        address _beneficiary,
+        uint256 _fYGNShare
+    ) internal returns (uint256 xYGNAmount) {
         uint256 ygnAmount = fYGNClaimableBurner.getYGNAmount(_fYGNShare);
         IERC20(fYGN).safeApprove(address(fYGNClaimableBurner), _fYGNShare);
         fYGNClaimableBurner.leave(_fYGNShare);
